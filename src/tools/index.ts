@@ -29,9 +29,9 @@ export interface Tool {
   run: (args: Record<string, unknown>, ctx: ToolContext) => Promise<string>;
 }
 
-/* ---------------- safety helpers ---------------- */
+/* ------------------------- safety helpers ------------------------- */
 
-const DESTRUCTIVE = /\b(rm\s+-[rf]|mkfs|dd\s+if=|:\(\)\{|shutdown|reboot|del\s+\/[fs]|format\s+[a-z]:|cipher\s+\/w|>\/dev\/sd|chmod\s+-R\s+777\s+\/|mv\s+\/|killall|kill\s+-9\s+1)\b/i;
+const DESTRUCTIVE = /\b(rm\s+-[rf]|mkfs|dd\s+if=|:\(\)\s*\{|shutdown|reboot|del\s+\/[fs]|format\s+[a-z]:|cipher\s+\/w|>\/dev\/sd|chmod\s+-R\s+777\s+\/|mv\s+\/|killall|kill\s+-9\s+1)\b/i;
 
 function isWindows(): boolean {
   return process.platform === "win32";
@@ -42,7 +42,7 @@ function homeRelative(p: string): string {
   return p.startsWith("~/") ? join(h, p.slice(2)) : p;
 }
 
-/* ---------------- tools ---------------- */
+/* ------------------------------ tools ------------------------------ */
 
 const shell: Tool = {
   def: {
@@ -68,8 +68,9 @@ const shell: Tool = {
       if (!ok) return "Blocked: owner declined the command.";
     }
     try {
-      const finalCmd = isWindows() ? command : ["/bin/bash", "-lc", command].slice(0, 3).length === 3 ? command : command;
-      const { stdout, stderr } = await execAsync(finalCmd, {
+      // Run through a login shell so PATH and profile (e.g. ~/.bashrc) are loaded.
+      // On Windows, cmd.exe already loads the user environment.
+      const { stdout, stderr } = await execAsync(command, {
         timeout: 60_000,
         maxBuffer: 4 << 20,
         shell: isWindows() ? "cmd.exe" : "/bin/bash",
@@ -143,7 +144,7 @@ const fetchPage: Tool = {
   },
   async run(args) {
     try {
-      const res = await fetch(String(args.url), { headers: { "User-Agent": "yoru-lite/0.2" } });
+      const res = await fetch(String(args.url), { headers: { "User-Agent": "yoru-lite/0.3" } });
       const text = await res.text();
       return text.slice(0, 6000);
     } catch (e) {
@@ -173,7 +174,7 @@ const remember: Tool = {
   },
 };
 
-/* ------------ file index ("where is X") ------------ */
+/* ------------------- file index ("where is X") ------------------- */
 
 const INDEX_FILE = join(DATA_DIR, "file-index.json");
 
@@ -237,7 +238,7 @@ const fileIndex: Tool = {
   },
 };
 
-/* ------------ scoped lockdown (vault encryption) ------------ */
+/* ----------------- scoped lockdown (vault encryption) ----------------- */
 
 const VAULT_DEFAULT = "~/vault";
 const KEY_FILE = join(DATA_DIR, "vault.key"); // owner copies this somewhere safe after each lockdown
@@ -342,7 +343,7 @@ const unlock: Tool = {
   },
 };
 
-/* ------------ owner-only lookup index (PDF/CSV) ------------ */
+/* ---------------- owner-only lookup index (PDF/CSV) ---------------- */
 
 const LOOKUP_DIR = () => process.env.LOOKUP_DIR ?? "data/lookups";
 const LOOKUP_INDEX = join(DATA_DIR, "lookup-index.json");
