@@ -1,0 +1,16 @@
+{
+  "name": "yoru-lite",
+  "version": "0.3.0",
+  "description": "Self-hosted personal AI agent: terminal + Discord, tools, memory, security watchdog, local models via Ollama",
+  "type": "module",
+  "scripts": {
+    "chat": "tsx src/index.ts",
+    "discord": "tsx src/index.ts discord",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.0"
+  },
+  "devDependencies": { "tsx": "^4.19.0", "typescript": "^5.5.0", "@types/node": "^20.14.0" }
+}
