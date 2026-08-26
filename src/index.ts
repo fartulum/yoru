@@ -11,7 +11,7 @@ const OWNER_DISCORD_IDS = (process.env.OWNER_DISCORD_IDS ?? "")
 
 async function main() {
   const mode = process.argv[2] ?? "chat";
-  const name = process.env.env.PERSONA_NAME ?? "Yoru";
+  const name = process.env.PERSONA_NAME ?? "Yoru";
   const { version } = JSON.parse(readFileSync("package.json", "utf8")) as { version: string };
 
   if (mode === "discord" || process.env.DISCORD_TOKEN) {
