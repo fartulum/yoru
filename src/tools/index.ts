@@ -33,11 +33,11 @@ export interface Tool {
 
 const DESTRUCTIVE = /\b(rm\s+-[rf]|mkfs|dd\s+if=|:\(\)\s*\{|shutdown|reboot|del\s+\/[fs]|format\s+[a-z]:|cipher\s+\/w|>\/dev\/sd|chmod\s+-R\s+777\s+\/|mv\s+\/|killall|kill\s+-9\s+1)\b/i;
 
-function isWindows(): boolean {
+export function isWindows(): boolean {
   return process.platform === "win32";
 }
 
-function homeRelative(p: string): string {
+export function homeRelative(p: string): string {
   const h = process.env.HOME ?? process.env.USERPROFILE ?? ".";
   return p.startsWith("~/") ? join(h, p.slice(2)) : p;
 }
