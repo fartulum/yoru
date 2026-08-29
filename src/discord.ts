@@ -2,6 +2,8 @@ import { Client, GatewayIntentBits, Events, type Message } from "discord.js";
 import { Agent } from "./agent.js";
 import { loadEnvFile } from "./llm.js";
 import { startWatchdog } from "./watchdog.js";
+import { logAudit } from "./audit.js";
+import { setPanelState } from "./panel.js";
 
 loadEnvFile();
 
@@ -41,6 +43,7 @@ export async function startDiscord(ownerIds: string[]) {
 
   client.once(Events.ClientReady, (c) => {
     console.log(`Discord bot live as ${c.user.tag}. Owner IDs: ${ownerIds.join(", ") || "(none set!)"}`);
+    setPanelState({ status: "idle", activity: "Discord bot connected" });
     // autonomous watchdog alerts go to the owner's DM channel
     if (ownerIds.length && process.env.WATCHDOG === "on") {
       const ownerAgent = getAgent(`dm:${ownerIds[0]}`, true, `discord:${ownerIds[0]}`);
@@ -73,6 +76,7 @@ export async function startDiscord(ownerIds: string[]) {
     const key = `dm:${msg.channelId}`;
     const agent = getAgent(key, isOwner, `discord:${msg.author.username}${isOwner ? " (OWNER)" : ""}`);
     agent.setConfirm(confirmViaReply(msg));
+    logAudit({ time: new Date().toISOString(), actor: `discord:${msg.author.id}`, action: "message", detail: msg.content.slice(0, 200) });
     try {
       const reply = await agent.handle(msg.content.replace(/<@!?\d+>/g, "").trim());
       await msg.reply(reply.slice(0, 1900));
