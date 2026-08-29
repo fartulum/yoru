@@ -1,4 +1,4 @@
-import { EmbedBuilder, PermissionFlagsBits, type Message } from "discord.js";
+import { EmbedBuilder, PermissionFlagsBits, type GuildMember, type Message, type TextChannel } from "discord.js";
 
 /**
  * Shared embed styling + permission helpers for the Discord bot.
@@ -51,7 +51,7 @@ export function fail(msg: Message, title: string, description: string) {
 }
 
 /** Resolve a target member from a mention, name, or id. */
-export async function resolveMember(msg: Message, query?: string) {
+export async function resolveMember(msg: Message, query?: string): Promise<GuildMember | undefined> {
   if (!query) return undefined;
   const mention = msg.mentions.members?.first();
   if (mention) return mention;
@@ -71,7 +71,7 @@ export function requirePerm(msg: Message, perm: bigint): string | null {
 }
 
 /** Hierarchy gate for moderation targets. */
-export function canModerate(msg: Message, target: any): string | null {
+export function canModerate(msg: Message, target: GuildMember | undefined): string | null {
   if (!target) return "Mention a valid user.";
   if (target.id === msg.author.id) return "You can't target yourself.";
   if (target.id === msg.client.user?.id) return "I'm not going to moderate myself.";
@@ -106,4 +106,12 @@ export function timeLeft(ms: number): string {
   const h = Math.floor(ms / 3_600_000);
   const m = Math.ceil((ms % 3_600_000) / 60_000);
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+/**
+ * The bot's commands only run in server text channels. `msg.channel` is a wide
+ * union in discord.js (DMs, threads, voice chat...), so this helper narrows it
+ * to TextChannel for send/awaitMessages/bulkDelete/permissionOverwrites.
+ */
+export function ch(msg: Message): TextChannel {
+  return msg.channel as TextChannel;
 }
