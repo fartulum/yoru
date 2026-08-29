@@ -3,7 +3,7 @@ import { Agent } from "./agent";
 import { loadEnvFile } from "./llm";
 import { startWatchdog } from "./watchdog";
 import { logAudit } from "./audit";
-import { setPanelStat, setPanelClient, setPanelState } from "./panel/api";
+import { setPanelState, setPanelClient } from "./panel/api";
 import { playRobotBanner } from "./banner";
 import {
   parseCommand, findCommand, isModerator, commandCatalogPrompt,
@@ -51,8 +51,8 @@ export async function startDiscord(ownerIds: string[]) {
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMembers,
       GatewayIntentBits.GuildMessages,
-      GatewayIntentBits.GuildMessageReactions,
       GatewayIntentBits.MessageContent,
+      GatewayIntentBits.GuildMessageReactions,
     ],
     partials: [Partials.Message, Partials.Reaction, Partials.Channel],
   });
@@ -60,7 +60,7 @@ export async function startDiscord(ownerIds: string[]) {
 
   client.once(Events.ClientReady, (c) => {
     console.log(`Discord bot live as ${c.user.tag}. Owner IDs: ${ownerIds.join(", ") || "(none set)"}`);
-    setPanelStat({ status: "idle", activity: "Discord bot connected" });
+    setPanelState({ status: "idle", activity: "Discord bot connected" } as any);
     if (ownerIds.length && process.env.WATCHDOG === "on") {
       const ownerAgent = getAgent(`dm:${ownerIds[0]}`, true, `discord:${ownerIds[0]}`);
       startWatchdog(ownerAgent);
@@ -89,8 +89,8 @@ export async function startDiscord(ownerIds: string[]) {
     return a;
   }
 
-  /* ---- verification helpers (shared with the web panel) ---- */
-  function verifyConfig(guildId: string): VerifyConfig {
+  /* ----- verification helpers (shared with the web panel) ----- */
+  function verifyConfigFor(guildId: string): VerifyConfig {
     return state.verify[guildId] ??= { enabled: false, verified: {} };
   }
 
@@ -136,18 +136,18 @@ export async function startDiscord(ownerIds: string[]) {
         if (!list || i < 0 || i >= list.length) return false;
         list.splice(i, 1); scheduleSave(); return true;
       },
-      snippet: (chId) => state.snipes[chId],
-      editSnippet: (chId) => state.editSnipes[chId],
-      recordSnippet: (chId, s) => { state.snipes[chId] = s; },
-      recordEditSnippet: (chId, s) => { state.editSnipes[chId] = s; },
+      snippe: (chId) => state.snippets[chId],
+      editSnippe: (chId) => state.editSnippets[chId],
+      recordSnippe: (chId, s) => { state.snippets[chId] = s; },
+      recordEditSnippe: (chId, s) => { state.editSnippets[chId] = s; },
       // verification
       verifyConfig,
-      setVerifyRole: (roleId) => { verifyConfig(msg.guildId!).roleId = roleId; scheduleSave(); },
-      setVerifyEnabled: (on) => { verifyConfig(msg.guildId!).enabled = on; scheduleSave(); },
-      setVerifyLog: (chId) => { verifyConfig(msg.guildId!).logChannelId = chId; scheduleSave(); },
-      markVerified: (userId) => { verifyConfig(msg.guildId!).verified[userId] = { username: msg.author.username, at: Date.now() }; scheduleSave(); },
+      setVerifyRole: (roleId) => { verifyConfigFor(msg.guildId!).roleId = roleId; scheduleSave(); },
+      setVerifyEnabled: (on) => { verifyConfigFor(msg.guildId!).enabled = on; scheduleSave(); },
+      setVerifyLog: (chId) => { verifyConfigFor(msg.guildId!).logChannelId = chId; scheduleSave(); },
+      markVerified: (userId) => { verifyConfigFor(msg.guildId!).verified[userId] = { username: msg.author.username, at: Date.now() }; scheduleSave(); },
       logVerify: (userId, username) => {
-        const cfg = verifyConfig(msg.guildId!);
+        const cfg = verifyConfigFor(msg.guildId!);
         const ch = cfg.logChannelId ? client.channels.cache.get(cfg.logChannelId) : undefined;
         if ((ch as any)?.isTextBased?.()) {
           (ch as any).send(`✅ <@${userId}> (${username}) verified.`).catch(() => {});
@@ -160,14 +160,14 @@ export async function startDiscord(ownerIds: string[]) {
     };
   }
 
-  // snipe tracking
+  // snippet tracking
   client.on(Events.MessageDelete, (msg) => {
     if (msg.author?.bot || !msg.content) return;
-    state.snipes[msg.channel.id] = { author: msg.author.tag, content: msg.content.slice(0, 500) };
+    state.snippets[msg.channel.id] = { author: msg.author.tag, content: msg.content.slice(0, 500) };
   });
   client.on(Events.MessageUpdate, (_old, msgNew) => {
     if (msgNew.author?.bot || !msgNew.content) return;
-    state.editSnipes[msgNew.channel.id] = { author: msgNew.author.tag, content: msgNew.content.slice(0, 500) };
+    state.editSnippets[msgNew.channel.id] = { author: msgNew.author.tag, content: msgNew.content.slice(0, 500) };
   });
 
   // welcome / goodbye
@@ -237,7 +237,7 @@ export async function startDiscord(ownerIds: string[]) {
       return; // never forward prefix commands to the LLM
     }
 
-    // ----- AI agent reply (mention or DM), profanity embedded -----
+    // ----- AI agent reply (mention or DM), profanely embedded -----
     if (!isDm && !mentioned) return;
     const key = `dm:${msg.channelId}`;
     const agent = getAgent(key, isOwner, `discord:${msg.author.username}${isOwner ? " (OWNER)" : ""}`);
@@ -273,8 +273,8 @@ export async function startDiscord(ownerIds: string[]) {
     } else if (/intents|disallowed/i.test(err)) {
       console.error(
         "\nDiscord rejected the connection because Privileged Intents are off.\nGo to discord.com/developers > your app > Bot and enable:\n" +
-        "  - MESSAGE CONTENT INTENT\n" +
-        "  - SERVER MEMBERS INTENT (optional but recommended)\nThen restart the bot."
+        "    - MESSAGE CONTENT INTENT\n" +
+        "    - SERVER MEMBERS INTENT (optional but recommended)\nThen restart the bot."
       );
     } else {
       console.error("Check your internet connection, then restart the bot.");
