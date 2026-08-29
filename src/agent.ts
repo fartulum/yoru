@@ -3,7 +3,7 @@ import { tools, loadMemory, type ToolContext } from "./tools/index.js";
 import { logAudit, isKilled } from "./audit.js";
 import { setPanelState } from "./panel.js";
 import { sanitizeReply } from "./sanitize.js";
-import { commandCatalogPrompt } from "./commands.js";
+import { commandCatalogPrompt } from "./commands/index.js";
 import { readFileSync as rf, existsSync } from "node:fs";
 
 const PERSONA_PATH = "config/persona.md";
@@ -42,7 +42,7 @@ export class Agent {
     this.history.push({
       role: "system",
       content:
-        persona.replace("{name}", process.env.PERSONA_NAME ?? "Yoru") +
+        persona.replace("{name}", process.env.PERSON_NAME ?? "Yoru") +
         instructions +
         commandCatalogPrompt() +
         (memory ? `\n# Long-term memory\n${memory}` : "") +
