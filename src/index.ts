@@ -3,6 +3,7 @@ import { loadEnvFile } from "./llm.js";
 import { Agent } from "./agent.js";
 import { startWatchdog } from "./watchdog.js";
 import { startPanel, setPanelState } from "./panel.js";
+import { startOwnerPanel } from "./panel/api.js";
 import { logAudit } from "./audit.js";
 import { playRobotBanner } from "./banner.js";
 
@@ -30,6 +31,7 @@ async function main() {
 
   if (mode === "discord" || process.env.DISCORD_TOKEN) {
     startPanel();
+    startOwnerPanel(); // separate port (OWNER_PANEL_PORT, default 4175)
     const { startDiscord } = await import("./discord.js");
     playRobotBanner(true, `${bold(cyan(`${name} — Discord mode`))} ${dim("— colored ASCII robot online")}`, true);
     await startDiscord(OWNER_DISCORD_IDS);
@@ -38,17 +40,19 @@ async function main() {
 
   // terminal mode
   startPanel();
+  startOwnerPanel();
   playRobotBanner(false, `${name} (yoru-lite v0.4) — ASCII robot online`);
   const confirm = (q: string) => new Promise<boolean>((res) => {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
     rl.question(`${yellow("?")} ${q} `, (a) => { rl.close(); res(/^y(es)?$/i.test(a.trim())); });
   });
-  const agent = new Agent({ owner: true, sender: "terminal", confirm, say: async (t) => console.log(t) });
+  const agent = new Agent({ owner: true, sender: "terminal", confirm, say: (t) => console.log(t) });
   logAudit({ time: new Date().toISOString(), actor: "terminal", action: "session_start" });
   setPanelState({ name, status: "idle", activity: "Terminal session started" });
   console.log(
     `${bold(cyan(`${name} (yoru-lite v0.4)`))} ${dim("—")} backend: ${magenta(process.env.LLM_BACKEND ?? "ollama")}, model: ${magenta(process.env.OLLAMA_MODEL ?? "llama3.2:3b")}\n` +
     `${dim(`Visual panel: http://localhost:${process.env.PANEL_PORT ?? 4173}`)}\n` +
+    `${dim(`Owner panel: http://localhost:${process.env.OWNER_PANEL_PORT ?? 4175}`)}\n` +
     `${dim(`Type your message, or ${bold("exit")} to quit.`)}\n`
   );
   const rl = createInterface({ input: process.stdin, output: process.stdout });
