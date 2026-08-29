@@ -8,7 +8,7 @@
     "discord": "tsx src/index.ts discord",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/tools/index.test.ts src/commands.test.ts"
+    "test": "node --import tsx --test src/tools/index.test.ts src/commands.test.ts src/sanitize.test.ts src/llm.test.ts src/openrouter.test.ts"
   },
   "dependencies": {
     "discord.js": "^14.16.0"
