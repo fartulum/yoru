@@ -34,15 +34,15 @@ const PAGE = `<!doctype html>
   :root { --bg:#0b0e14; --fg:#e6e9f0; --acc:#7c6cf0; --dim:#8b93a7; }
   * { box-sizing:border-box; margin:0; }
   body { background:var(--bg); color:var(--fg); font-family:'Segoe UI',system-ui,sans-serif;
-         height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; }
+          height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; }
   .avatar { width:220px; height:220px; border-radius:50%; position:relative;
             background:radial-gradient(circle at 35% 30%, #2a2f45, #12151f 70%);
             display:flex; align-items:center; justify-content:center; font-size:96px;
             box-shadow:0 0 0 6px rgba(124,108,240,.15), 0 0 60px rgba(124,108,240,.25);
-            animation: float 4s ease-in-out infinite; }
+            animation:float 4s ease-in-out infinite; }
   .avatar.alert { box-shadow:0 0 0 6px rgba(240,108,108,.3), 0 0 60px rgba(240,108,108,.5); }
   .avatar::after { content:''; position:absolute; inset:-14px; border-radius:50%;
-            border:2px dashed rgba(124,108,240,.35); animation: spin 14s linear infinite; }
+            border:2px dashed rgba(124,108,240,.35); animation:spin 14s linear infinite; }
   @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
   @keyframes spin { to { transform:rotate(360deg) } }
   .status { font-size:14px; letter-spacing:.2em; text-transform:uppercase; color:var(--acc); }
@@ -56,7 +56,7 @@ const PAGE = `<!doctype html>
 </style></head>
 <body>
   <h1 id="name">Yoru</h1>
-  <div class="avatar" id="avatar">🦊</div>
+  <div class="avatar" id="avatar">🌙</div>
   <div class="status" id="status">idle</div>
   <div class="activity" id="activity">…</div>
   <div class="log" id="log"></div>
@@ -72,15 +72,19 @@ const PAGE = `<!doctype html>
       document.getElementById('activity').textContent = s.activity;
       const a = await (await fetch('/audit')).json();
       document.getElementById('log').innerHTML = a.slice(-14).reverse().map(e =>
-        '<div><b>'+esc(e.time.slice(11,19))+'</b> '+esc(e.actor)+' → '+esc(e.action)+
-        (e.allowed===false?' <span class="no">BLOCKED</span>':'')+'</div>').join('') || '<div>no activity yet</div>';
+        `<div><b>${esc(e.time.slice(11,19))}</b> ${esc(e.actor)} — ${esc(e.action)}` +
+        (e.allowed===false?` <span class="no">BLOCKED</span>`:'')+`</div>`).join('') || '<div>no activity yet</div>';
     } catch {}
   }
   tick(); setInterval(tick, 2000);
 </script>
 </body></html>`;
 
-/** Start the visual character panel on http://localhost:PORT (default 4173). */
+/**
+ * Start the visual character panel on http://localhost:PORT (default 4173).
+ * If the port is already in use (another localhost app), automatically try the
+ * next ports up to +10 before giving up, and always log the final URL.
+ */
 export function startPanel(port = Number(process.env.PANEL_PORT ?? 4173)): void {
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     if (req.url === "/state") {
@@ -94,7 +98,23 @@ export function startPanel(port = Number(process.env.PANEL_PORT ?? 4173)): void 
       res.end(PAGE);
     }
   });
+
+  const MAX_ATTEMPTS = 10;
+  let attempts = 0;
+
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE" && attempts < MAX_ATTEMPTS) {
+      attempts++;
+      const next = port + attempts;
+      console.warn(`Port ${port + attempts - 1} already in use, trying ${next}…`);
+      server.listen(next);
+    } else {
+      console.error(`Visual agent panel could not start: ${err.message}`);
+    }
+  });
+
   server.listen(port, () => {
-    console.log(`Visual agent panel: http://localhost:${port}  (set PANEL_PORT to change)`);
+    const actual = (server.address() as { port: number }).port;
+    console.log(`Visual agent panel: http://localhost:${actual}  (set PANEL_PORT to change)`);
   });
 }
