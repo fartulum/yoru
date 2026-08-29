@@ -3,7 +3,7 @@ import { Agent } from "./agent.js";
 import { loadEnvFile } from "./llm.js";
 import { startWatchdog } from "./watchdog.js";
 import { logAudit } from "./audit.js";
-import { setPanelStat } from "./panel.js";
+import { setPanelState } from "./panel.js";
 
 loadEnvFile();
 
@@ -11,7 +11,8 @@ const agents = new Map<string, Agent>(); // per-channel conversation memory
 
 function confirmViaReply(msg: Message) {
   return async (question: string): Promise<boolean> => {
-    await msg.reply(`${question}\n(reply "yes" within 60s to confirm)`);
+    await msg.reply(`${question}
+(reply "yes" within 60s to confirm)`);
     try {
       const collected = await (msg.channel as any).awaitMessages({
         filter: (m: Message) => m.author.id === msg.author.id && /^(y(es)?|no?)$/i.test(m.content.trim()),
@@ -43,8 +44,8 @@ export async function startDiscord(ownerIds: string[]) {
   });
 
   client.on(Events.ClientReady, (c) => {
-    console.log(`Discord bot live as ${c.user.tag}. Owner IDs: ${ownerIds.join(", ") || "(none set!)"}`);
-    setPanelStat({ status: "idle", activity: "Discord bot connected" });
+    console.log(`Discord bot live as ${c.user.tag}. Owner IDs: ${ownerIds.join(", ") || "(none set)"}`);
+    setPanelState({ status: "idle", activity: "Discord bot connected" });
     // autonomous watchdog alerts go to the owner's DM channel
     if (ownerIds.length && process.env.WATCHDOG === "on") {
       const ownerAgent = getAgent(`dm:${ownerIds[0]}`, true, `discord:${ownerIds[0]}`);
