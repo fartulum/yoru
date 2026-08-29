@@ -17,7 +17,7 @@ import { utilityCommands } from "./utility.js";
 export interface EcoAccount {
   balance: number;
   bank?: number;
-  lastDaily: number;
+  lastDaily?: number;
   lastWeekly?: number;
   lastMonthly?: number;
   workCooldown: number;
@@ -87,7 +87,8 @@ export const commands: BotCommand[] = [
 ];
 
 export function findCommand(name: string): BotCommand | undefined {
-  return commands.find((c) => c.name === name);
+  const lower = name.toLowerCase();
+  return commands.find((c) => c.name === lower);
 }
 
 export function parseCommand(content: string, prefix: string): { name: string; args: string[] } | null {
@@ -109,7 +110,7 @@ export function commandCatalogPrompt(prefix = "!"): string {
   return `\n# Discord commands available\nThe bot you speak through has ${commands.length} prefix commands. When a user asks what commands exist, list them by category (moderation, admin, fun, economy, games, utility, info). Prefix commands run instantly without you — tell users to just type them, e.g. ${prefix}daily. Full list:\n${sections.join("\n")}\n`;
 }
 
-/* ---------------- persistent state ---------------- */
+/* ------------------- persistent state ------------------- */
 
 const DATA_DIR = join(process.cwd(), "data");
 
@@ -175,7 +176,7 @@ export const SHOP_ITEMS = [
   { emoji: "🦖", name: "Pet Dino", price: 1500, desc: "A loyal (plush) companion." },
   { emoji: "🚀", name: "Rocket Ride", price: 3000, desc: "One trip to the moon." },
   { emoji: "👑", name: "Crown", price: 10000, desc: "Flex on the leaderboard." },
-  { emoji: "🏆", name: "Trophy", price: 25000, desc: "The ultimate status symbol." },
+  { emoji: "🗿", name: "Trophy", price: 25000, desc: "The ultimate status symbol." },
 ];
 
 export function isModerator(msg: Message, isOwner: boolean): boolean {
