@@ -1,20 +1,21 @@
 import { Client, GatewayIntentBits, Events, EmbedBuilder, Partials, type Message } from "discord.js";
-import { Agent } from "./agent.js";
-import { loadEnvFile } from "./llm.js";
-import { startWatchdog } from "./watchdog.js";
-import { logAudit } from "./audit.js";
-import { setPanelState } from "./panel.js";
-import { playRobotBanner } from "./banner.js";
+import { Agent } from "./agent";
+import { loadEnvFile } from "./llm";
+import { startWatchdog } from "./watchdog";
+import { logAudit } from "./audit";
+import { setPanelStat, setPanelClient, setPanelState } from "./panel/api";
+import { playRobotBanner } from "./banner";
 import {
   parseCommand, findCommand, isModerator, commandCatalogPrompt,
-  loadState, saveState, getAccount, SHOP_ITEMS, commands,
-  type BotState, type CommandContext,
-} from "./commands/index.js";
+  loadState, saveState, getAccount, effectiveCommands, DEFAULT_ECONOMY,
+  type BotState, type CommandContext, type VerifyConfig,
+} from "./commands/index";
 
 loadEnvFile();
 
 const agents = new Map<string, Agent>(); // per-channel conversation memory
 const state: BotState = loadState();
+setPanelState(state);
 let saveTimer: NodeJS.Timeout | undefined;
 function scheduleSave() {
   if (saveTimer) return;
@@ -26,12 +27,12 @@ function confirmViaReply(msg: Message) {
     await msg.reply(`${question}(reply "yes" within 60s to confirm)`);
     try {
       const collected = await (msg.channel as any).awaitMessages({
-        filter: (m: Message) => m.author.id === msg.author.id && /^(y(es)?)|(no?)$/i.test(m.content.trim()),
+        filter: (m: Message) => m.author.id === msg.author.id && /^(yes)?|(no)?$/i.test(m.content.trim()),
         max: 1,
         time: 60_000,
         errors: ["time"],
       });
-      return /^y(es)?$/i.test(collected.first()!.content.trim());
+      return /^yes?$/i.test(collected.first()!.content.trim());
     } catch {
       return false;
     }
@@ -50,15 +51,16 @@ export async function startDiscord(ownerIds: string[]) {
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMembers,
       GatewayIntentBits.GuildMessages,
-      GatewayIntentBits.MessageContent,
       GatewayIntentBits.GuildMessageReactions,
+      GatewayIntentBits.MessageContent,
     ],
     partials: [Partials.Message, Partials.Reaction, Partials.Channel],
   });
+  setPanelClient(client);
 
   client.once(Events.ClientReady, (c) => {
     console.log(`Discord bot live as ${c.user.tag}. Owner IDs: ${ownerIds.join(", ") || "(none set)"}`);
-    setPanelState({ status: "idle", activity: "Discord bot connected" });
+    setPanelStat({ status: "idle", activity: "Discord bot connected" });
     if (ownerIds.length && process.env.WATCHDOG === "on") {
       const ownerAgent = getAgent(`dm:${ownerIds[0]}`, true, `discord:${ownerIds[0]}`);
       startWatchdog(ownerAgent);
@@ -87,15 +89,20 @@ export async function startDiscord(ownerIds: string[]) {
     return a;
   }
 
+  /* ---- verification helpers (shared with the web panel) ---- */
+  function verifyConfig(guildId: string): VerifyConfig {
+    return state.verify[guildId] ??= { enabled: false, verified: {} };
+  }
+
   function buildContext(msg: Message, isOwner: boolean, args: string[], prefix: string): CommandContext {
     return {
       msg, isOwner, args, prefix,
-      allCommands: () => commands,
+      allCommands: () => effectiveCommands(state),
       eco: (id) => getAccount(state, id),
       saveEco: scheduleSave,
       topBalances: () => Object.entries(state.eco)
         .sort((a, b) => b[1].balance - a[1].balance).slice(0, 10)
-        .map(([id, acc], i) => `**${i + 1}.** <@${id}> — ${acc.balance} :coin:`),
+        .map(([id, acc], i) => `**${i + 1}** <@${id}> — ${acc.balance} :coin:`),
       shopItems: () => SHOP_ITEMS,
       warns: (id) => state.warns[id] ?? [],
       saveWarns: scheduleSave,
@@ -107,7 +114,7 @@ export async function startDiscord(ownerIds: string[]) {
       addXp: (id, n) => { state.levels[id] = (state.levels[id] ?? 0) + n; scheduleSave(); },
       topLevels: () => Object.entries(state.levels)
         .sort((a, b) => b[1] - a[1]).slice(0, 10)
-        .map(([id, xp], i) => `**${i + 1}.** <@${id}> — level ${Math.floor(0.1 * Math.sqrt(xp)) + 1} (${xp} XP)`),
+        .map(([id, xp], i) => `**${i + 1}** <@${id}> — level ${Math.floor(0.1 * Math.sqrt(xp)) + 1} (${xp} XP)`),
       counter: () => state.counters[msg.guildId ?? "global"] ?? 0,
       setCounter: (n) => { state.counters[msg.guildId ?? "global"] = n; scheduleSave(); },
       setPrefix: (p) => { (state.guildConfig[msg.guildId!] ??= {}).prefix = p; scheduleSave(); },
@@ -129,10 +136,27 @@ export async function startDiscord(ownerIds: string[]) {
         if (!list || i < 0 || i >= list.length) return false;
         list.splice(i, 1); scheduleSave(); return true;
       },
-      snipe: (chId) => state.snipes[chId],
-      editSnipe: (chId) => state.editSnipes[chId],
-      recordSnipe: (chId, s) => { state.snipes[chId] = s; },
-      recordEditSnipe: (chId, s) => { state.editSnipes[chId] = s; },
+      snippet: (chId) => state.snipes[chId],
+      editSnippet: (chId) => state.editSnipes[chId],
+      recordSnippet: (chId, s) => { state.snipes[chId] = s; },
+      recordEditSnippet: (chId, s) => { state.editSnipes[chId] = s; },
+      // verification
+      verifyConfig,
+      setVerifyRole: (roleId) => { verifyConfig(msg.guildId!).roleId = roleId; scheduleSave(); },
+      setVerifyEnabled: (on) => { verifyConfig(msg.guildId!).enabled = on; scheduleSave(); },
+      setVerifyLog: (chId) => { verifyConfig(msg.guildId!).logChannelId = chId; scheduleSave(); },
+      markVerified: (userId) => { verifyConfig(msg.guildId!).verified[userId] = { username: msg.author.username, at: Date.now() }; scheduleSave(); },
+      logVerify: (userId, username) => {
+        const cfg = verifyConfig(msg.guildId!);
+        const ch = cfg.logChannelId ? client.channels.cache.get(cfg.logChannelId) : undefined;
+        if ((ch as any)?.isTextBased?.()) {
+          (ch as any).send(`✅ <@${userId}> (${username}) verified.`).catch(() => {});
+        }
+      },
+      // command overrides + economy settings (web panel)
+      setCommandOverride: (name, o) => { state.commandOverrides[name] = o; scheduleSave(); },
+      economySettings: () => state.economy,
+      setEconomySettings: (s) => { Object.assign(state.economy, s); scheduleSave(); },
     };
   }
 
@@ -173,10 +197,10 @@ export async function startDiscord(ownerIds: string[]) {
     const isDm = !msg.guild;
     const prefix = guildPrefix(msg.guildId ?? "global");
 
-    // ---- prefix commands: handled WITHOUT the AI agent ----
+    // ----- prefix commands: handled WITHOUT the AI agent -----
     const parsed = parseCommand(msg.content, prefix);
     if (parsed) {
-      const cmd = findCommand(parsed.name);
+      const cmd = effectiveCommands(state).find((c) => c.name === parsed.name) ?? findCommand(parsed.name);
       const ctx = buildContext(msg, isOwner, parsed.args, prefix);
       if (!cmd) {
         await msg.reply({
@@ -213,14 +237,14 @@ export async function startDiscord(ownerIds: string[]) {
       return; // never forward prefix commands to the LLM
     }
 
-    // ---- AI agent reply (mention or DM), professionally embedded ----
+    // ----- AI agent reply (mention or DM), profanity embedded -----
     if (!isDm && !mentioned) return;
     const key = `dm:${msg.channelId}`;
     const agent = getAgent(key, isOwner, `discord:${msg.author.username}${isOwner ? " (OWNER)" : ""}`);
     agent.setConfirm(confirmViaReply(msg) as any);
     logAudit({ time: new Date().toISOString(), actor: `discord:${msg.author.id}`, action: "message", detail: msg.content.slice(0, 200) });
     try {
-      const reply = await agent.handle(msg.content.replace(/<@!?\d+>/g, "").trim());
+      const reply = await agent.handle(msg.content.replace(/<!?\d+>/g, "").trim());
       const embed = new EmbedBuilder()
         .setColor(0x5865f2)
         .setAuthor({ name: "yoru", iconURL: client.user!.displayAvatarURL() })
@@ -241,18 +265,16 @@ export async function startDiscord(ownerIds: string[]) {
     if (/token/i.test(err)) {
       console.error(
         "\nYour DISCORD_TOKEN was rejected. Checklist:\n" +
-          "  1. Copy the token from discord.com/developers > your app > Bot > Reset Token (the full string, no quotes/spaces).\n" +
-          "  2. In .env write: DISCORD_TOKEN=your_token_here (no quotes around it).\n" +
-          "  3. Never use your account token or client secret — only the Bot token.\n" +
-          "  4. After changing the token, restart the bot."
+        "  1. Copy the token from discord.com/developers > your app > Bot > Reset Token (the full string, no quotes/spaces).\n" +
+        "  2. In .env write: DISCORD_TOKEN=your_token_here (no quotes around it).\n" +
+        "  3. NEVER use your account token or client secret — only the Bot token.\n" +
+        "  4. After changing the token, restart the bot."
       );
     } else if (/intents|disallowed/i.test(err)) {
       console.error(
-        "\nDiscord rejected the connection because Privileged Intents are off.\n" +
-          "Go to discord.com/developers > your app > Bot and enable:\n" +
-          "    - MESSAGE CONTENT INTENT\n" +
-          "    - SERVER MEMBERS INTENT (optional but recommended)\n" +
-          "Then restart the bot."
+        "\nDiscord rejected the connection because Privileged Intents are off.\nGo to discord.com/developers > your app > Bot and enable:\n" +
+        "  - MESSAGE CONTENT INTENT\n" +
+        "  - SERVER MEMBERS INTENT (optional but recommended)\nThen restart the bot."
       );
     } else {
       console.error("Check your internet connection, then restart the bot.");
@@ -262,3 +284,4 @@ export async function startDiscord(ownerIds: string[]) {
 }
 
 export { playRobotBanner };
+import { SHOP_ITEMS } from "./commands/index";
