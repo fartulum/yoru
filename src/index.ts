@@ -26,7 +26,7 @@ async function main() {
   const confirm = (q: string) =>
     new Promise<boolean>((res) => {
       const rl = createInterface({ input: process.stdin, output: process.stdout });
-      rl.question(`${q} `, (a) => { rl.close(); res(/^y(es)?$/i.test(a.trim())); });
+      rl.question(`${q} `, (a) => { rl.close(); res(/^(y|yes)$/i.test(a.trim())); });
     });
   const agent = new Agent({ owner: true, sender: "terminal", confirm, say: async (t) => console.log(t) });
   logAudit({ time: new Date().toISOString(), actor: "terminal", action: "session_start" });
@@ -41,7 +41,7 @@ async function main() {
     const input = line.trim();
     if (!input) return;
     if (input === "exit" || input === "quit") { rl.close(); process.exit(0); }
-    agent.handle(input).catch((e) => console.error(`ERROR: ${(e as Error).message}`));
+    agent.handle(input).then((reply) => console.log(`${name}: ${reply}\n`)).catch((e) => console.error(`ERROR: ${(e as Error).message}`));
   });
   if (process.env.WATCHDOG === "on") startWatchdog(agent);
 }
