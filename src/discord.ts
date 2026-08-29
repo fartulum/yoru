@@ -3,7 +3,7 @@ import { Agent } from "./agent.js";
 import { loadEnvFile } from "./llm.js";
 import { startWatchdog } from "./watchdog.js";
 import { logAudit } from "./audit.js";
-import { setPanelState } from "./panel.js";
+import { setPanelStat } from "./panel.js";
 
 loadEnvFile();
 
@@ -32,6 +32,7 @@ export async function startDiscord(ownerIds: string[]) {
     console.error("DISCORD_TOKEN missing in .env — get a bot token at discord.com/developers (NEVER your account token).");
     process.exit(1);
   }
+
   const client = new Client({
     intents: [
       GatewayIntentBits.Guilds,
@@ -41,9 +42,9 @@ export async function startDiscord(ownerIds: string[]) {
     ],
   });
 
-  client.once(Events.ClientReady, (c) => {
+  client.on(Events.ClientReady, (c) => {
     console.log(`Discord bot live as ${c.user.tag}. Owner IDs: ${ownerIds.join(", ") || "(none set!)"}`);
-    setPanelState({ status: "idle", activity: "Discord bot connected" });
+    setPanelStat({ status: "idle", activity: "Discord bot connected" });
     // autonomous watchdog alerts go to the owner's DM channel
     if (ownerIds.length && process.env.WATCHDOG === "on") {
       const ownerAgent = getAgent(`dm:${ownerIds[0]}`, true, `discord:${ownerIds[0]}`);
@@ -85,5 +86,30 @@ export async function startDiscord(ownerIds: string[]) {
     }
   });
 
-  await client.login(token);
+  try {
+    await client.login(token);
+  } catch (e) {
+    const err = (e as Error).message ?? String(e);
+    console.error("Discord login failed:", err);
+    if (/token/i.test(err)) {
+      console.error(
+        "\nYour DISCORD_TOKEN was rejected. Checklist:\n" +
+          "  1. Copy the token from discord.com/developers > your app > Bot > Reset Token (the full string, no quotes/spaces).\n" +
+          "  2. In .env write: DISCORD_TOKEN=your_token_here (no quotes around it).\n" +
+          "  3. Never use your account token or client secret — only the Bot token.\n" +
+          "  4. After changing the token, restart the bot."
+      );
+    } else if (/intents|disallowed/i.test(err)) {
+      console.error(
+        "\nDiscord rejected the connection because Privileged Intents are off.\n" +
+          "  Go to discord.com/developers > your app > Bot and enable:\n" +
+          "    - MESSAGE CONTENT INTENT\n" +
+          "    - SERVER MEMBERS INTENT (optional but recommended)\n" +
+          "  Then restart the bot."
+      );
+    } else {
+      console.error("Check your internet connection, then restart the bot.");
+    }
+    process.exit(1);
+  }
 }
