@@ -3,6 +3,7 @@
  * independent of what the LLM produces.
  *  - strips markdown code fences wrapping the whole reply (```bash ... ```)
  *  - redacts lines that quote the agent's own instructions/config
+ *  - strips zero-width and other invisible Unicode characters
  */
 const INSTRUCTION_MARKERS = [
   "config/instructions.md",
@@ -10,8 +11,12 @@ const INSTRUCTION_MARKERS = [
   "standing orders",
   "system prompt",
   "your instructions",
-  "my instructions are",
+  "my instructions are:",
 ];
+
+// Zero-width and invisible characters that can smuggle hidden content
+// through to the user (e.g. prompt-injection watermarks).
+const INVISIBLE_CHARS = /[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g;
 
 export function sanitizeReply(reply: string): string {
   let out = reply.trim();
@@ -28,6 +33,9 @@ export function sanitizeReply(reply: string): string {
       return !INSTRUCTION_MARKERS.some((m) => lower.includes(m));
     })
     .join("\n");
+
+  // Strip invisible Unicode characters.
+  out = out.replace(INVISIBLE_CHARS, "");
 
   return out.trim();
 }
