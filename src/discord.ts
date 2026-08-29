@@ -1,9 +1,10 @@
-import { Client, GatewayIntentBits, Events, type Message } from "discord.js";
+import { Client, GatewayIntentBits, Events, EmbedBuilder, type Message } from "discord.js";
 import { Agent } from "./agent.js";
 import { loadEnvFile } from "./llm.js";
 import { startWatchdog } from "./watchdog.js";
 import { logAudit } from "./audit.js";
 import { setPanelState } from "./panel.js";
+import { parseCommand, findCommand, isModerator } from "./commands.js";
 
 loadEnvFile();
 
@@ -15,7 +16,7 @@ function confirmViaReply(msg: Message) {
 (reply "yes" within 60s to confirm)`);
     try {
       const collected = await (msg.channel as any).awaitMessages({
-        filter: (m: Message) => m.author.id === msg.author.id && /^(y(es)?|no?)$/i.test(m.content.trim()),
+        filter: (m: Message) => m.author.id === msg.author.id && /^(y(es)?)|(no?)$/i.test(m.content.trim()),
         max: 1,
         time: 60_000,
         errors: ["time"],
@@ -37,13 +38,13 @@ export async function startDiscord(ownerIds: string[]) {
   const client = new Client({
     intents: [
       GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMembers,
       GatewayIntentBits.GuildMessages,
-      GatewayIntentBits.DirectMessages,
       GatewayIntentBits.MessageContent,
     ],
   });
 
-  client.on(Events.ClientReady, (c) => {
+  client.once(Events.ClientReady, (c) => {
     console.log(`Discord bot live as ${c.user.tag}. Owner IDs: ${ownerIds.join(", ") || "(none set)"}`);
     setPanelState({ status: "idle", activity: "Discord bot connected" });
     // autonomous watchdog alerts go to the owner's DM channel
@@ -59,6 +60,7 @@ export async function startDiscord(ownerIds: string[]) {
       a = new Agent({
         owner,
         sender,
+        confirm: confirmViaReply as any,
         say: async (t) => {
           const ch = client.channels.cache.get(key.slice(3));
           if (ch?.isTextBased()) await (ch as any).send(t.slice(0, 1900));
@@ -79,9 +81,46 @@ export async function startDiscord(ownerIds: string[]) {
     const agent = getAgent(key, isOwner, `discord:${msg.author.username}${isOwner ? " (OWNER)" : ""}`);
     agent.setConfirm(confirmViaReply(msg));
     logAudit({ time: new Date().toISOString(), actor: `discord:${msg.author.id}`, action: "message", detail: msg.content.slice(0, 200) });
+
+    // ---- text commands (!command) ----
+    const parsed = parseCommand(msg.content);
+    if (parsed) {
+      const cmd = findCommand(parsed.name);
+      if (!cmd) {
+        await msg.reply({
+          embeds: [new EmbedBuilder().setColor(0x99aab5).setTitle("Unknown Command").setDescription(`\`!${parsed.name}\` doesn't exist. Try \`!help\`.`).setTimestamp()],
+          allowedMentions: { repliedUser: false },
+        });
+        return;
+      }
+      if (cmd.modOnly && !isModerator(msg, isOwner)) {
+        await msg.reply({
+          embeds: [new EmbedBuilder().setColor(0xed4245).setTitle("Permission Denied").setDescription(`\`!${cmd.name}\` is for moderators only.`).setTimestamp()],
+          allowedMentions: { repliedUser: false },
+        });
+        return;
+      }
+      try {
+        await cmd.run({ msg, isOwner, args: parsed.args });
+      } catch (e) {
+        await msg.reply({
+          embeds: [new EmbedBuilder().setColor(0xed4245).setTitle("Command Error").setDescription(`\`${(e as Error).message}\``).setTimestamp()],
+          allowedMentions: { repliedUser: false },
+        });
+      }
+      return;
+    }
+
+    // ---- AI agent reply, professionally embedded ----
     try {
       const reply = await agent.handle(msg.content.replace(/<@!?\d+>/g, "").trim());
-      await msg.reply(reply.slice(0, 1900));
+      const embed = new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setAuthor({ name: "yoru", iconURL: client.user!.displayAvatarURL() })
+        .setDescription(reply.slice(0, 4000) || "(no reply)")
+        .setTimestamp(new Date())
+        .setFooter({ text: `requested by ${msg.author.username}` });
+      await msg.reply({ embeds: [embed], allowedMentions: { repliedUser: false } });
     } catch (e) {
       await msg.reply(`ERROR: ${(e as Error).message}`).catch(() => {});
     }
