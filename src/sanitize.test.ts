@@ -14,7 +14,7 @@ describe("sanitizeReply", () => {
 
   it("leaves plain prose untouched", () => {
     assert.equal(sanitizeReply("All clear, nothing suspicious on the box."), 
-      "All clear, nothing suspicious on the box."
+      "All clear, nothing suspicious on the box.",
     );
   });
 
@@ -26,5 +26,15 @@ describe("sanitizeReply", () => {
   it("keeps a fenced block that is only part of the reply", () => {
     const raw = "Try this command:\n```\nls -la\n```\nIt lists everything.";
     assert.equal(sanitizeReply(raw), raw);
+  });
+
+  it("strips zero-width and invisible Unicode characters", () => {
+    const raw = "invis\u200Bible\u202Etext\uFEFF here";
+    assert.equal(sanitizeReply(raw), "invisible text here");
+  });
+
+  it("strips invisible characters even inside a fenced reply", () => {
+    const raw = "```\nwa\u200Btermark\n```";
+    assert.equal(sanitizeReply(raw), "watermark");
   });
 });
