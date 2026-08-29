@@ -34,14 +34,22 @@ async function main() {
   console.log(
     `${name} (yoru-lite v0.4) — backend: ${process.env.LLM_BACKEND ?? "ollama"}, model: ${process.env.OLLAMA_MODEL ?? "llama3.2:3b"}\n` +
     `Terminal mode. Visual panel: http://localhost:${process.env.PANEL_PORT ?? 4173}\n` +
-    `Type your message, or "exit" to quit.\n`,
+    `Type your message, or "exit" to quit.\n`
   );
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   rl.on("line", (line) => {
     const input = line.trim();
     if (!input) return;
     if (input === "exit" || input === "quit") { rl.close(); process.exit(0); }
-    agent.handle(input).then((reply) => console.log(`${name}: ${reply}\n`)).catch((e) => console.error(`ERROR: ${(e as Error).message}`));
+    // Stream the reply live: tokens print as they arrive from the LLM.
+    let streamed = false;
+    process.stdout.write(`${name}: `);
+    agent.handle(input, (token) => { streamed = true; process.stdout.write(token); })
+      .then((reply) => {
+        if (!streamed) process.stdout.write(reply); // non-streaming backends
+        process.stdout.write("\n\n");
+      })
+      .catch((e) => console.error(`ERROR: ${(e as Error).message}\n`));
   });
   if (process.env.WATCHDOG === "on") startWatchdog(agent);
 }
