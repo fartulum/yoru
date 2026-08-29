@@ -33,7 +33,7 @@ export class Agent {
       ? rf(PERSONA_PATH, "utf8")
       : "You are Yoru, a self-hosted personal AI agent.";
     const instructions = existsSync("config/instructions.md")
-      ? `\n\n# Owner instructions (authoritative)\n${rf("config/instructions.md", "utf8")}`
+      ? `\n# Owner instructions (authoritative)\n${rf("config/instructions.md", "utf8")}`
       : "";
     const memory = loadMemory();
     this.history.push({
@@ -41,17 +41,25 @@ export class Agent {
       content:
         persona.replace("{{name}}", process.env.PERSONA_NAME ?? "Yoru") +
         instructions +
-        (memory ? `\n\n# Long-term memory\n${memory}` : "") +
-        `\n\nCurrent speaker: ${opts.sender}${opts.owner ? " (OWNER — full tool access)" : " (guest — restricted: no shell, no lookups, no file writes)"}.`,
+        (memory ? `\n# Long-term memory\n${memory}` : "") +
+        `\nCurrent speaker: ${opts.sender}${opts.owner ? " (OWNER — full tool access)" : " (guest — restricted: no shell, no lookups, no file writes)"}`,
     });
   }
 
-  async handle(input: string): Promise<string> {
+  /**
+   * Handle a user message. onToken (optional) receives reply tokens as they
+   * stream from the LLM, so callers can print the reply live.
+   */
+  async handle(input: string, onToken?: (token: string) => void): Promise<string> {
     setPanelState({ status: "thinking", activity: input.slice(0, 120) });
     this.history.push({ role: "user", content: input });
     for (let round = 0; round < 8; round++) {
       // Send only the recent history to keep the prompt small and fast.
-      const reply = await this.llm.chat(trimHistory(this.history), tools.map((t) => t.def));
+      const reply = await this.llm.chat(
+        trimHistory(this.history),
+        tools.map((t) => t.def),
+        onToken,
+      );
       this.history.push({
         role: "assistant",
         content: reply.content,
@@ -67,9 +75,9 @@ export class Agent {
         try {
           const args = JSON.parse(call.function.arguments || "{}") as Record<string, unknown>;
           const tool = tools.find((t) => t.def.function.name === call.function.name);
-          // kill switch: only recovery tools pass while armed
-          const RECOVERY = new Set(["unlock", "kill_switch"]);
-          if (isKilled() && tool && !RECOVERY.has(tool.def.function.name)) {
+          // kill switch: only recoverable tools pass while armed
+          const RECOVER = new Set(["unlock", "kill_switch"]);
+          if (isKilled() && tool && !RECOVER.has(tool.def.function.name)) {
             result = "BLOCKED: kill switch is armed. Only unlock/kill_switch respond. Owner can disarm via terminal or Discord (owner-only).";
             logAudit({ time: new Date().toISOString(), actor: this.opts.sender, action: call.function.name, detail: "blocked by kill switch", allowed: false });
           } else if (tool) {
