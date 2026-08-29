@@ -1,4 +1,4 @@
-/** Single-page owner dashboard served by the panel API. Purple glass, animated, zero deps. */
+/** Single-page owner dashboard served by the panel API. Pure glass, animated, zero deps. */
 export const PAGE = `<!doctype html>
 <html><head><meta charset="utf-8"><title>yoru — owner panel</title>
 <style>
@@ -111,6 +111,7 @@ function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show')
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('nav button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
   document.querySelectorAll('section').forEach(s=>s.classList.remove('on'));$(b.dataset.tab).classList.add('on');
+  loadTab(b.dataset.tab);
 });
 async function api(p,opt){const r=await fetch(p,opt);if(!r.ok)throw new Error(await r.text());return r.json();}
 
@@ -136,7 +137,7 @@ async function loadCommands(){
   ).join('');
 }
 async function toggleCmd(name,on){
-  await api('/api/commands/override',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name,enabled:on})});
+  await api('/api/commands/override',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name,enable:on})});
   toast((on?'Enabled ':'Disabled ')+name);
 }
 
@@ -186,15 +187,14 @@ async function loadServers(){
   ).join('') || '<p class="muted">No servers yet.</p>';
 }
 
-async function tick(){
-  try{
-    await loadStats();
-    const on = document.querySelector('section.on').id;
-    if(on==='commands') await loadCommands();
-    if(on==='economy') await loadEco();
-    if(on==='verify') await loadVerify();
-    if(on==='servers') await loadServers();
-  }catch(e){ $('status').textContent='offline'; }
+/* Load a tab's data. Called on tab switch only — never on a timer, so
+   in-progress form edits are never wiped by a background refresh. */
+function loadTab(tab){
+  if(tab==='commands') safe(loadCommands);
+  if(tab==='economy') safe(loadEco);
+  if(tab==='verify') safe(loadVerify);
+  if(tab==='servers') safe(loadServers);
+  if(tab==='audit') safe(loadStats);
 }
 
 $('cmdtable').addEventListener('change',e=>{const t=e.target;if(t.dataset.cmd)toggleCmd(t.dataset.cmd,t.checked);});
@@ -208,5 +208,8 @@ $('verifylist').addEventListener('change',e=>{
 });
 $('saveeco').onclick=saveEco;
 const safe=fn=>{try{fn()}catch(e){console.error(e)}};
-safe(loadCommands);safe(loadEco);safe(loadVerify);safe(loadServers);tick();setInterval(tick,4000);
+safe(loadCommands);safe(loadEco);safe(loadVerify);safe(loadServers);
+/* Poll only the lightweight stats header; tab bodies are static until you switch tabs. */
+async function tick(){try{await loadStats();}catch(e){$('status').textContent='offline';}}
+tick();setInterval(tick,4000);
 </script></body></html>`;
