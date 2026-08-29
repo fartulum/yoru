@@ -31,7 +31,7 @@ export interface Tool {
 
 /* ---------------- safety helpers ---------------- */
 
-const DESTRUCTIVE = /\b(rm\s+-[rf]|mkfs|dd\s+if=|:\(\)\{|\bshutdown|reboot|del\s+\/[fs]|format\s+[a-z]:|>\/dev\/sd|chmod\s+-R\s+777\s+\/|mv\s+\/|killall|kill\s+-9\s+1)\b/i;
+const DESTRUCTIVE = /\b(rm\s+-[rf]|mkfs|dd\s+if=|:(\s*\{|\s*\(\s*\{)|shutdown|reboot|del\s+\/[fqs]|format\s+[a-z]:|>\/dev\/sd|chmod\s+777\s+\/|mv\s+\/|killall|kill\s+-9\s+1)\b/i;
 
 export function isWindows(): boolean {
   return process.platform === "win32";
@@ -39,7 +39,9 @@ export function isWindows(): boolean {
 
 export function homeRelative(p: string): string {
   const h = process.env.HOME ?? process.env.USERPROFILE ?? ".";
-  return p.startsWith("~/") ? join(h, p.slice(2)) : p;
+  if (p === "~") return h;
+  if (p.startsWith("~/")) return join(h, p.slice(2));
+  return p;
 }
 
 /* ---------------- tools ---------------- */
@@ -85,7 +87,7 @@ const readFile: Tool = {
   def: {
     type: "function",
     function: {
-      name: "read_file",
+      name: "readfile",
       description: "Read a text file from disk.",
       parameters: {
         type: "object",
@@ -108,7 +110,7 @@ const writeFile: Tool = {
   def: {
     type: "function",
     function: {
-      name: "write_file",
+      name: "writefile",
       description: "Write (create or overwrite) a text file.",
       parameters: {
         type: "object",
@@ -275,7 +277,7 @@ const lockdown: Tool = {
     }
     if (!existsSync(vault)) return `Vault directory ${vault} does not exist. Create it and move files in first.`;
     const ok = await ctx.confirm(`🔒 Lockdown: encrypt ALL files in ${vault}? You will get one recovery key.`);
-    if (!ok) return "Cancelled.";
+    if (!ok) return "Canceled.";
     const key = randomBytes(32);
     writeFileSync(KEY_FILE, key.toString("base64"), { mode: 0o600 });
     const files = walkFiles(vault);
@@ -365,7 +367,7 @@ function parsePdfText(text: string): LookupRow[] {
   // crude line-based parse: "id | username | ip | location | isp" or comma/tab separated
   const rows: LookupRow[] = [];
   for (const line of text.split(/\r?\n/)) {
-    const cells = line.split(/\s*[|,\t]\s*/).filter(Boolean);
+    const cells = line.split(/\s*[|\t]\s*/).filter(Boolean);
     if (cells.length >= 2) {
       const fields: Record<string, string> = {};
       ["id", "username", "ip", "location", "isp"].forEach((k, i) => {
