@@ -1,4 +1,4 @@
-import { makeLLM, trimHistory, type ChatMessage } from "./llm.js";
+import { makeLLM, trimHistory, type ChatMessage, type LLMClient } from "./llm";
 import { tools, loadMemory, type ToolContext } from "./tools/index.js";
 import { logAudit, isKilled } from "./audit.js";
 import { setPanelState } from "./panel.js";
@@ -19,11 +19,12 @@ export interface AgentOptions {
 }
 
 export class Agent {
-  private llm = makeLLM();
+  private llmPromise: Promise<LLMClient>;
   private history: ChatMessage[] = [];
   private ctx: ToolContext;
 
   constructor(private opts: AgentOptions) {
+    this.llmPromise = makeLLM();
     this.ctx = {
       owner: opts.owner,
       sender: opts.sender,
@@ -40,7 +41,7 @@ export class Agent {
     this.history.push({
       role: "system",
       content:
-        persona.replace("{{name}}", process.env.PERSONA_NAME ?? "Yoru") +
+        persona.replace("{name}", process.env.PERSONA_NAME ?? "Yoru") +
         instructions +
         (memory ? `\n# Long-term memory\n${memory}` : "") +
         `\nCurrent speaker: ${opts.sender}${opts.owner ? " (OWNER — full tool access)" : " (guest — restricted: no shell, no lookups, no file writes)"}`,
@@ -53,10 +54,11 @@ export class Agent {
    */
   async handle(input: string, onToken?: (token: string) => void): Promise<string> {
     setPanelState({ status: "thinking", activity: input.slice(0, 120) });
+    const llm = await this.llmPromise;
     this.history.push({ role: "user", content: input });
     for (let round = 0; round < 8; round++) {
       // Send only the recent history to keep the prompt small and fast.
-      const reply = await this.llm.chat(
+      const reply = await llm.chat(
         trimHistory(this.history),
         tools.map((t) => t.def),
         onToken,
@@ -79,7 +81,7 @@ export class Agent {
           // kill switch: only recoverable tools pass while armed
           const RECOVER = new Set(["unlock", "kill_switch"]);
           if (isKilled() && tool && !RECOVER.has(tool.def.function.name)) {
-            result = "BLOCKED: kill switch is armed. Only unlock/kill_switch respond. Owner can disarm via terminal or Discord (owner-only).";
+            result = "BLOCKED: kill switch is armed. Only unlock/kill_switch respond. Owner can disable via terminal or Discord (owner-only).";
             logAudit({ time: new Date().toISOString(), actor: this.opts.sender, action: call.function.name, detail: "blocked by kill switch", allowed: false });
           } else if (tool) {
             result = await tool.run(args, this.ctx);
