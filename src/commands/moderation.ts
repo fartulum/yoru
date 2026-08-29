@@ -1,5 +1,5 @@
 import { PermissionFlagsBits } from "discord.js";
-import { base, ok, fail, resolveMember, canModerate, requirePerm, clampInt, pick } from "./shared.js";
+import { base, ok, fail, resolveMember, canModerate, requirePerm, clampInt, pick, ch } from "./shared.js";
 import type { CommandContext, BotCommand } from "./types.js";
 
 const REASONS = [
@@ -21,7 +21,7 @@ export const moderationCommands: BotCommand[] = [
       if (gate) return void (await fail(ctx.msg, "Permission Denied", gate));
       const target = await resolveMember(ctx.msg, ctx.args[0]);
       const hErr = canModerate(ctx.msg, target);
-      if (hErr) return void (await fail(ctx.msg, "Cannot Ban", hErr));
+      if (hErr || !target) return void (await fail(ctx.msg, "Cannot Ban", hErr ?? "Mention a valid user."));
       const reason = ctx.args.slice(1).join(" ") || pick(REASONS);
       await target.ban({ reason: `!ban by ${ctx.msg.author.tag}: ${reason}` });
       await ok(ctx.msg, "moderation", "Member Banned", `${target.user.tag} has been banned.\n**Reason:** ${reason}`);
@@ -38,7 +38,7 @@ export const moderationCommands: BotCommand[] = [
       if (gate) return void (await fail(ctx.msg, "Permission Denied", gate));
       const target = await resolveMember(ctx.msg, ctx.args[0]);
       const hErr = canModerate(ctx.msg, target);
-      if (hErr) return void (await fail(ctx.msg, "Cannot Softban", hErr));
+      if (hErr || !target) return void (await fail(ctx.msg, "Cannot Softban", hErr ?? "Mention a valid user."));
       const reason = ctx.args.slice(1).join(" ") || "softban (message purge)";
       await target.ban({ reason, deleteMessageSeconds: 604800 });
       await ctx.msg.guild?.members.unban(target.id).catch(() => {});
@@ -71,7 +71,7 @@ export const moderationCommands: BotCommand[] = [
       if (gate) return void (await fail(ctx.msg, "Permission Denied", gate));
       const target = await resolveMember(ctx.msg, ctx.args[0]);
       const hErr = canModerate(ctx.msg, target);
-      if (hErr) return void (await fail(ctx.msg, "Cannot Kick", hErr));
+      if (hErr || !target) return void (await fail(ctx.msg, "Cannot Kick", hErr ?? "Mention a valid user."));
       const reason = ctx.args.slice(1).join(" ") || "No reason provided";
       await target.kick(`!kick by ${ctx.msg.author.tag}: ${reason}`);
       await ok(ctx.msg, "moderation", "Member Kicked", `${target.user.tag} has been kicked.\n**Reason:** ${reason}`);
@@ -88,7 +88,7 @@ export const moderationCommands: BotCommand[] = [
       if (gate) return void (await fail(ctx.msg, "Permission Denied", gate));
       const target = await resolveMember(ctx.msg, ctx.args[0]);
       const hErr = canModerate(ctx.msg, target);
-      if (hErr) return void (await fail(ctx.msg, "Cannot Timeout", hErr));
+      if (hErr || !target) return void (await fail(ctx.msg, "Cannot Timeout", hErr ?? "Mention a valid user."));
       const minutes = clampInt(ctx.args[1], 1, 40320, 10);
       await target.timeout(minutes * 60_000, ctx.args.slice(2).join(" ") || "Timeout via command");
       await ok(ctx.msg, "moderation", "Member Timed Out", `${target.user.tag} timed out for **${minutes} min**.`);
@@ -105,7 +105,7 @@ export const moderationCommands: BotCommand[] = [
       if (gate) return void (await fail(ctx.msg, "Permission Denied", gate));
       const target = await resolveMember(ctx.msg, ctx.args[0]);
       const hErr = canModerate(ctx.msg, target);
-      if (hErr) return void (await fail(ctx.msg, "Cannot Untimeout", hErr));
+      if (hErr || !target) return void (await fail(ctx.msg, "Cannot Untimeout", hErr ?? "Mention a valid user."));
       await target.timeout(null);
       await ok(ctx.msg, "moderation", "Timeout Removed", `${target.user.tag} can talk again.`);
     },
@@ -120,8 +120,8 @@ export const moderationCommands: BotCommand[] = [
       const gate = requirePerm(ctx.msg, PermissionFlagsBits.ManageMessages);
       if (gate) return void (await fail(ctx.msg, "Permission Denied", gate));
       const count = clampInt(ctx.args[0], 2, 100, 10);
-      const deleted = await ctx.msg.channel.bulkDelete(count, true);
-      await ctx.msg.channel.send({
+      const deleted = await ch(ctx.msg).bulkDelete(count, true);
+      await ch(ctx.msg).send({
         embeds: [base("moderation", "Messages Cleared", `**${deleted.size}** messages deleted.`)],
       });
     },
@@ -138,10 +138,10 @@ export const moderationCommands: BotCommand[] = [
       const target = await resolveMember(ctx.msg, ctx.args[0]);
       if (!target) return void (await fail(ctx.msg, "Usage", "`!purgeuser <user> [count]`"));
       const count = clampInt(ctx.args[1], 1, 100, 50);
-      const msgs = await ctx.msg.channel.messages.fetch({ limit: 100 });
+      const msgs = await ch(ctx.msg).messages.fetch({ limit: 100 });
       const theirs = msgs.filter((m) => m.author.id === target.id).first(count);
-      if (theirs.length) await ctx.msg.channel.bulkDelete(theirs, true);
-      await ctx.msg.channel.send({
+      if (theirs.length) await ch(ctx.msg).bulkDelete(theirs, true);
+      await ch(ctx.msg).send({
         embeds: [base("moderation", "Purged", `Deleted **${theirs.length}** messages from ${target.user.tag}.`)],
       });
     },
@@ -173,7 +173,7 @@ export const moderationCommands: BotCommand[] = [
       if (gate) return void (await fail(ctx.msg, "Permission Denied", gate));
       const target = await resolveMember(ctx.msg, ctx.args[0]);
       const hErr = canModerate(ctx.msg, target);
-      if (hErr) return void (await fail(ctx.msg, "Cannot Warn", hErr));
+      if (hErr || !target) return void (await fail(ctx.msg, "Cannot Warn", hErr ?? "Mention a valid user."));
       const reason = ctx.args.slice(1).join(" ");
       if (!reason) return void (await fail(ctx.msg, "Usage", "`!warn <user> <reason>`"));
       const warns = ctx.warns(target.id);
@@ -225,7 +225,7 @@ export const moderationCommands: BotCommand[] = [
       if (gate) return void (await fail(ctx.msg, "Permission Denied", gate));
       const target = await resolveMember(ctx.msg, ctx.args[0]);
       const hErr = canModerate(ctx.msg, target);
-      if (hErr) return void (await fail(ctx.msg, "Cannot Mute", hErr));
+      if (hErr || !target) return void (await fail(ctx.msg, "Cannot Mute", hErr ?? "Mention a valid user."));
       await target.timeout(60 * 60_000, ctx.args.slice(1).join(" ") || "muted");
       await ok(ctx.msg, "moderation", "Member Muted", `${target.user.tag} muted for **60 min**.`);
     },
@@ -241,7 +241,7 @@ export const moderationCommands: BotCommand[] = [
       if (gate) return void (await fail(ctx.msg, "Permission Denied", gate));
       const target = await resolveMember(ctx.msg, ctx.args[0]);
       const hErr = canModerate(ctx.msg, target);
-      if (hErr) return void (await fail(ctx.msg, "Cannot Unmute", hErr));
+      if (hErr || !target) return void (await fail(ctx.msg, "Cannot Unmute", hErr ?? "Mention a valid user."));
       await target.timeout(null);
       await ok(ctx.msg, "moderation", "Member Unmuted", `${target.user.tag} unmuted.`);
     },
@@ -255,7 +255,7 @@ export const moderationCommands: BotCommand[] = [
     async run(ctx) {
       const gate = requirePerm(ctx.msg, PermissionFlagsBits.ManageChannels);
       if (gate) return void (await fail(ctx.msg, "Permission Denied", gate));
-      await ctx.msg.channel.permissionOverwrites.edit(ctx.msg.guild!.id, { SendMessages: false });
+      await ch(ctx.msg).permissionOverwrites.edit(ctx.msg.guild!.id, { SendMessages: false });
       await ok(ctx.msg, "moderation", "Channel Locked", ctx.args.join(" ") || "Only staff can send messages here.");
     },
   },
@@ -268,7 +268,7 @@ export const moderationCommands: BotCommand[] = [
     async run(ctx) {
       const gate = requirePerm(ctx.msg, PermissionFlagsBits.ManageChannels);
       if (gate) return void (await fail(ctx.msg, "Permission Denied", gate));
-      await ctx.msg.channel.permissionOverwrites.edit(ctx.msg.guild!.id, { SendMessages: null });
+      await ch(ctx.msg).permissionOverwrites.edit(ctx.msg.guild!.id, { SendMessages: null });
       await ok(ctx.msg, "moderation", "Channel Unlocked", "Everyone can send messages again.");
     },
   },
@@ -283,7 +283,7 @@ export const moderationCommands: BotCommand[] = [
       if (gate) return void (await fail(ctx.msg, "Permission Denied", gate));
       const target = await resolveMember(ctx.msg, ctx.args[0]);
       const hErr = canModerate(ctx.msg, target);
-      if (hErr) return void (await fail(ctx.msg, "Cannot Rename", hErr));
+      if (hErr || !target) return void (await fail(ctx.msg, "Cannot Rename", hErr ?? "Mention a valid user."));
       const nick = ctx.args.slice(1).join(" ");
       await target.setNickname(nick || null);
       await ok(ctx.msg, "moderation", "Nickname Changed", `${target.user.tag} is now **${nick || target.user.username}**.`);
@@ -300,7 +300,7 @@ export const moderationCommands: BotCommand[] = [
       if (gate) return void (await fail(ctx.msg, "Permission Denied", gate));
       const text = ctx.args.join(" ");
       if (!text) return void (await fail(ctx.msg, "Usage", "`!announce <message>`"));
-      await ctx.msg.channel.send({ embeds: [base("moderation", "Announcement", text).setColor(0x00b0f4)] });
+      await ch(ctx.msg).send({ embeds: [base("moderation", "Announcement", text).setColor(0x00b0f4)] });
     },
   },
   {
@@ -314,7 +314,7 @@ export const moderationCommands: BotCommand[] = [
       if (gate) return void (await fail(ctx.msg, "Permission Denied", gate));
       const q = ctx.args.join(" ");
       if (!q) return void (await fail(ctx.msg, "Usage", "`!poll <question>`"));
-      const m = await ctx.msg.channel.send({ embeds: [base("moderation", "Poll", q).setColor(0x00b0f4)] });
+      const m = await ch(ctx.msg).send({ embeds: [base("moderation", "Poll", q).setColor(0x00b0f4)] });
       await m.react("👍");
       await m.react("👎");
     },
