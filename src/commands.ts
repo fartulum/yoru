@@ -1,7 +1,6 @@
 import {
   EmbedBuilder,
   PermissionFlagsBits,
-  type ChatInputCommandInput,
   type Message,
 } from "discord.js";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
@@ -428,7 +427,7 @@ export const commands: BotCommand[] = [
       const t = TRIVIA[Math.floor(Math.random() * TRIVIA.length)];
       await ctx.msg.reply({ embeds: [embed("games", "Trivia", `${t.q}\nYou have 30 seconds.`)] });
       try {
-        const collected = await ctx.msg.channel.awaitMessages({
+        await ctx.msg.channel.awaitMessages({
           filter: (m) => m.author.id === ctx.msg.author.id && t.a.includes(m.content.trim().toLowerCase()),
           max: 1,
           time: 30_000,
