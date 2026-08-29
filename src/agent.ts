@@ -2,6 +2,7 @@ import { makeLLM, trimHistory, type ChatMessage } from "./llm.js";
 import { tools, loadMemory, type ToolContext } from "./tools/index.js";
 import { logAudit, isKilled } from "./audit.js";
 import { setPanelState } from "./panel.js";
+import { sanitizeReply } from "./sanitize.js";
 import { readFileSync as rf, existsSync } from "node:fs";
 
 const PERSONA_PATH = "config/persona.md";
@@ -67,7 +68,7 @@ export class Agent {
       });
       if (!reply.tool_calls?.length) {
         setPanelState({ status: "idle", activity: "Waiting" });
-        return reply.content.trim() || "(no reply)";
+        return sanitizeReply(reply.content) || "(no reply)";
       }
       setPanelState({ status: "working", activity: `running ${reply.tool_calls.map((c) => c.function.name).join(", ")}` });
       for (const call of reply.tool_calls) {
