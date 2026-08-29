@@ -1,12 +1,13 @@
 import { PermissionFlagsBits, type Message } from "discord.js";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { moderationCommands } from "./moderation.js";
-import { adminCommands } from "./admin.js";
-import { funCommands } from "./fun.js";
-import { economyCommands } from "./economy.js";
-import { gameCommands } from "./games.js";
-import { utilityCommands } from "./utility.js";
+import { moderationCommands } from "./moderation";
+import { adminCommands } from "./admin";
+import { funCommands } from "./fun";
+import { economyCommands } from "./economy";
+import { gamesCommands } from "./games";
+import { utilityCommands } from "./utility";
+import { verifyCommands } from "./verify";
 
 /**
  * Command registry + persistent state (economy, warns, levels, config, snipes).
@@ -30,6 +31,39 @@ export interface EcoAccount {
 }
 
 export interface WarnEntry { by: string; reason: string; at: number }
+
+/** Per-command owner overrides, editable from the web panel. */
+export interface CommandOverride {
+  enabled: boolean;
+  perm?: bigint;
+  modOnly?: boolean;
+}
+
+/** Economy tuning knobs, editable from the web panel. */
+export interface EconomySettings {
+  dailyReward: number;
+  weeklyReward: number;
+  monthlyReward: number;
+  workMin: number;
+  workMax: number;
+  workCooldownMin: number;
+  crimeCooldownMs: number;
+  stealCooldownMs: number;
+  fishCooldownMs: number;
+  huntCooldownMs: number;
+  digCooldownMs: number;
+  lotteryTicket: number;
+  bankInterest: number;
+}
+
+export interface VerifyRecord { username: string; at: number }
+
+export interface VerifyConfig {
+  enabled: boolean;
+  roleId?: string;
+  logChannelId?: string;
+  verified: Record<string, VerifyRecord>;
+}
 
 export interface CommandContext {
   msg: Message;
@@ -61,10 +95,21 @@ export interface CommandContext {
   addTodo(id: string, t: string): void;
   todos(id: string): string[];
   removeTodo(id: string, i: number): boolean;
-  snipe(channelId: string): { author: string; content: string } | undefined;
-  editSnipe(channelId: string): { author: string; content: string } | undefined;
-  recordSnipe(channelId: string, s: { author: string; content: string }): void;
-  recordEditSnipe(channelId: string, s: { author: string; content: string }): void;
+  snippet(channelId: string): { author: string; content: string } | undefined;
+  editSnippet(channelId: string): { author: string; content: string } | undefined;
+  recordSnippet(channelId: string, s: { author: string; content: string }): void;
+  recordEditSnippet(channelId: string, s: { author: string; content: string }): void;
+  // verification
+  verifyConfig(guildId: string): VerifyConfig;
+  setVerifyRole(roleId: string): void;
+  setVerifyEnabled(on: boolean): void;
+  setVerifyLog(channelId: string): void;
+  markVerified(userId: string): void;
+  logVerify(userId: string, username: string): void;
+  // command overrides + economy settings (web panel)
+  setCommandOverride(name: string, o: CommandOverride): void;
+  economySettings(): EconomySettings;
+  setEconomySettings(s: Partial<EconomySettings>): void;
 }
 
 export interface BotCommand {
@@ -82,13 +127,42 @@ export const commands: BotCommand[] = [
   ...adminCommands,
   ...funCommands,
   ...economyCommands,
-  ...gameCommands,
+  ...gamesCommands,
   ...utilityCommands,
+  ...verifyCommands,
 ];
 
 export function findCommand(name: string): BotCommand | undefined {
   return commands.find((c) => c.name === name);
 }
+
+/**
+ * Commands with the owner's overrides applied (enabled flag, perm, modOnly).
+ * Used by the message handler and exposed to the web panel.
+ */
+export function effectiveCommands(state: BotState): BotCommand[] {
+  return commands.filter((c) => state.commandOverrides[c.name]?.enabled !== false);
+}
+
+export function commandOverrideFor(state: BotState, name: string): CommandOverride {
+  return state.commandOverrides[name] ?? { enabled: true };
+}
+
+export const DEFAULT_ECONOMY: EconomySettings = {
+  dailyReward: 250,
+  weeklyReward: 1000,
+  monthlyReward: 5000,
+  workMin: 20,
+  workMax: 80,
+  workCooldownMin: 60,
+  crimeCooldownMs: 300_000,
+  stealCooldownMs: 300_000,
+  fishCooldownMs: 900_000,
+  huntCooldownMs: 900_000,
+  digCooldownMs: 600_000,
+  lotteryTicket: 100,
+  bankInterest: 1.02,
+};
 
 export function parseCommand(content: string, prefix: string): { name: string; args: string[] } | null {
   const trimmed = content.trim();
@@ -106,16 +180,16 @@ export function commandCatalogPrompt(prefix = "!"): string {
     const lines = cmds.map((c) => `- ${prefix}${c.name.replace(/^!/, "")}: ${c.description}${c.perm ? " (requires permission)" : ""}`);
     return `## ${cat} (${cmds.length})\n${lines.join("\n")}`;
   });
-  return `\n# Discord commands available\nThe bot you speak through has ${commands.length} prefix commands. When a user asks what commands exist, list them by category (moderation, admin, fun, economy, games, utility, info). Prefix commands run instantly without you — tell users to just type them, e.g. ${prefix}daily. Full list:\n${sections.join("\n")}\n`;
+  return `\n# Discord commands available\nThe bot you speak through has ${commands.length} prefix commands. When a user asks what commands exist, list them by category (moderation, admin, fun, economy, games, utility). Prefix commands run instantly without you — tell users to just type them, e.g. ${prefix}daily. Full list:\n${sections.join("\n")}\n`;
 }
 
-/* ---------------- persistent state ---------------- */
+/* ----------------- persistent state ----------------- */
 
 const DATA_DIR = join(process.cwd(), "data");
 
 function loadJson<T>(file: string, fallback: T): T {
   try {
-    return JSON.parse(readFileSync(join(DATA_DIR, file), "utf8"));
+    return JSON.parse(readFileSync(join(DATA_DIR, file), "utf8")) as T;
   } catch {
     return fallback;
   }
@@ -135,8 +209,11 @@ export interface BotState {
   afk: Record<string, string>;
   quotes: Record<string, string[]>;
   todos: Record<string, string[]>;
-  snipes: Record<string, { author: string; content: string }>;
-  editSnipes: Record<string, { author: string; content: string }>;
+  snippets: Record<string, { author: string; content: string }>;
+  editSnippets: Record<string, { author: string; content: string }>;
+  commandOverrides: Record<string, CommandOverride>;
+  economy: EconomySettings;
+  verify: Record<string, VerifyConfig>;
 }
 
 export function loadState(): BotState {
@@ -149,8 +226,11 @@ export function loadState(): BotState {
     afk: loadJson("afk.json", {}),
     quotes: loadJson("quotes.json", {}),
     todos: loadJson("todos.json", {}),
-    snipes: {},
-    editSnipes: {},
+    snippets: {},
+    editSnippets: {},
+    commandOverrides: loadJson("command_overrides.json", {}),
+    economy: { ...DEFAULT_ECONOMY, ...loadJson("economy_settings.json", {}) },
+    verify: loadJson("verify.json", {}),
   };
 }
 
@@ -163,6 +243,9 @@ export function saveState(state: BotState) {
   saveJson("afk.json", state.afk);
   saveJson("quotes.json", state.quotes);
   saveJson("todos.json", state.todos);
+  saveJson("command_overrides.json", state.commandOverrides);
+  saveJson("economy_settings.json", state.economy);
+  saveJson("verify.json", state.verify);
 }
 
 export function getAccount(state: BotState, id: string): EcoAccount {
@@ -172,7 +255,7 @@ export function getAccount(state: BotState, id: string): EcoAccount {
 
 export const SHOP_ITEMS = [
   { emoji: "🎩", name: "Top Hat", price: 500, desc: "Look fancy in chat." },
-  { emoji: "🦖", name: "Pet Dino", price: 1500, desc: "A loyal (plush) companion." },
+  { emoji: "🐕", name: "Pet Dino", price: 1500, desc: "A loyal (plush) companion." },
   { emoji: "🚀", name: "Rocket Ride", price: 3000, desc: "One trip to the moon." },
   { emoji: "👑", name: "Crown", price: 10000, desc: "Flex on the leaderboard." },
   { emoji: "🏆", name: "Trophy", price: 25000, desc: "The ultimate status symbol." },
