@@ -1,4 +1,4 @@
-# yoru-lite v0.3
+# yoru-lite v0.2
 
 Self-hosted personal AI agent: **terminal + Discord dual interface**, one shared brain,
 tools, persistent memory, and an autonomous security watchdog. Runs on Parrot OS and
@@ -75,3 +75,11 @@ Smarter brain: set `LLM_BACKEND=openai` + any OpenAI-compatible endpoint (Groq, 
 - `malware_scan`: signature + heuristic scan (droppers, reverse shells, miners, keyloggers, obfuscated payloads), plus ClamAV/Defender pass if installed. Hits are **quarantined** in `data/quarantine`, never auto-deleted — you review and shred.
 - `connections`: list active connections with owning processes; `baseline` once when clean, then `check` to flag unknown remote endpoints.
 - `tor start|stop|status`: toggles the Tor daemon (Linux: `sudo apt install tor`; Windows: Tor Browser). Route per-command with `torsocks` or SOCKS5 127.0.0.1:9050.
+
+## v0.4 — Discord remote control, kill switch, audit log, visual character
+
+- **Kill switch** (owner-only): `kill_switch arm/disarm/status`. When armed, every tool is blocked except `unlock` and `kill_switch disarm`. One command freezes the agent instantly, from terminal or Discord.
+- **Audit log**: every tool call is recorded (who, what, allowed/blocked) to `data/audit.log` (JSONL). Review with the `audit_log` tool or live in the panel.
+- **Visual character panel**: run any mode and open `http://localhost:4173` (configurable via `PANEL_PORT`). An animated agent character shows live status (idle/thinking/working/alert), current activity, and a live audit feed. Works on Parrot OS and Windows.
+- **Natural-language commands**: no slash or prefix commands anywhere. Ask the agent "what can you do", it lists its capabilities; then just tell it what you want ("run nmap on X", "check disk usage"). Owner Discord IDs get full tool access; everyone else is conversation-only.
+- **Dangerous-command gate**: destructive shell patterns (rm -rf, mkfs, dd, shutdown...) always require an explicit "yes" from the owner, on terminal or Discord.
