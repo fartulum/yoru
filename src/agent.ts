@@ -1,8 +1,9 @@
-import { makeLLM, trimHistory, type ChatMessage, type LLMClient } from "./llm";
+import { makeLLM, trimHistory, type ChatMessage, type LLMClient } from "./llm.js";
 import { tools, loadMemory, type ToolContext } from "./tools/index.js";
 import { logAudit, isKilled } from "./audit.js";
 import { setPanelState } from "./panel.js";
 import { sanitizeReply } from "./sanitize.js";
+import { commandCatalogPrompt } from "./commands.js";
 import { readFileSync as rf, existsSync } from "node:fs";
 
 const PERSONA_PATH = "config/persona.md";
@@ -29,7 +30,7 @@ export class Agent {
       owner: opts.owner,
       sender: opts.sender,
       confirm: opts.confirm ?? (async () => opts.owner),
-      say: opts.say ?? (async (t) => console.log(t)),
+      say: opts.say ?? ((t) => console.log(t)),
     };
     const persona = existsSync(PERSONA_PATH)
       ? rf(PERSONA_PATH, "utf8")
@@ -43,6 +44,7 @@ export class Agent {
       content:
         persona.replace("{name}", process.env.PERSONA_NAME ?? "Yoru") +
         instructions +
+        commandCatalogPrompt() +
         (memory ? `\n# Long-term memory\n${memory}` : "") +
         `\nCurrent speaker: ${opts.sender}${opts.owner ? " (OWNER — full tool access)" : " (guest — restricted: no shell, no lookups, no file writes)"}`,
     });
@@ -50,7 +52,7 @@ export class Agent {
 
   /**
    * Handle a user message. onToken (optional) receives reply tokens as they
-   * stream from the LLM, so callers can print the reply live.
+   * stream from the LLM so callers can print the reply live.
    */
   async handle(input: string, onToken?: (token: string) => void): Promise<string> {
     setPanelState({ status: "thinking", activity: input.slice(0, 120) });
