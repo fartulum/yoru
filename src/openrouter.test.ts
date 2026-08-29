@@ -11,7 +11,7 @@ function catalog(models: { id: string; prompt?: string; completion?: string; ctx
         pricing: { prompt: m.prompt ?? "0", completion: m.completion ?? "0" },
       })),
     }),
-  };
+  } as unknown as Response;
 }
 
 afterEach(() => {
@@ -56,6 +56,35 @@ describe("OpenRouterClient", () => {
       const body = JSON.parse(String(init?.body));
       if (body.model === "free/a") {
         return { ok: false, status: 404, text: async () => "model not found" } as unknown as Response;
+      }
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: "hello from b" } }] }),
+      } as unknown as Response;
+    }));
+    const c = new OpenRouterClient("test-key");
+    const reply = await c.chat([{ role: "user", content: "hi" }], []);
+    expect(reply.content).toBe("hello from b");
+    expect(c["models"].map((m) => m.id)).toEqual(["free/b"]);
+  });
+
+  it("drops a 403-restricted model and fails over to the next best one", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: unknown, init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith("/models")) {
+        return catalog([
+          { id: "free/a", ctx: 100 },
+          { id: "free/b", ctx: 90 },
+        ]) as unknown as Response;
+      }
+      const body = JSON.parse(String(init?.body));
+      if (body.model === "free/a") {
+        return {
+          ok: false,
+          status: 403,
+          text: async () =>
+            'OpenRouter error 403: {"error":{"message":"free/a:free is only available on agentic harnesses. Try plugging it into a coding agent or productivity app listed on https://openrouter.ai/apps","code":403}}',
+        } as unknown as Response;
       }
       return {
         ok: true,

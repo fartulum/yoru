@@ -93,7 +93,7 @@ export class OpenRouterClient implements LLMClient {
     onToken?: (token: string) => void,
   ): Promise<{ content: string; tool_calls?: ToolCall[] }> {
     let attempt = 0;
-    // Failover: on model errors (404/429/5xx), drop the model and retry with the next best one.
+    // Failover: on model errors (403/404/429/5xx), drop the model and retry with the next best one.
     while (attempt < 3) {
       const model = await this.pickModel();
       try {
@@ -101,8 +101,8 @@ export class OpenRouterClient implements LLMClient {
       } catch (err) {
         attempt++;
         const msg = err instanceof Error ? err.message : String(err);
-        const modelGone = /\b(404|not found|no longer|decommission)/i.test(msg);
-        const rateLimited = /\b(429|rate limit)/i.test(msg);
+        const modelGone = /\b(403|404|not found|no longer|decommission)\b/i.test(msg);
+        const rateLimited = /\b(429|rate limit)\b/i.test(msg);
         if (modelGone || rateLimited) {
           // Remove the dead model from the pool and force a re-pick.
           this.models = this.models.filter((m) => m.id !== model);
