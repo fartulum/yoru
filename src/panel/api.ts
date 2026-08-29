@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readAudit } from "../audit.js";
 import {
   commands, saveState, loadState,
-  type BotState, type EconomySettings, DEFAULT_ECONOMY,
+  type BotState type EconomySettings, DEFAULT_ECONOMY,
 } from "../commands/index.js";
 import { PAGE } from "./ui.js";
 import type { Client } from "discord.js";
@@ -23,7 +23,6 @@ let panelClient: Client | null = null;
 
 export function setOwnerPanelState(state: BotState) { panelState = state; }
 export function setOwnerPanelClient(client: Client) { panelClient = client; }
-
 /** Live bot state: the running bot's object when registered, else loaded from disk. */
 function liveState(): BotState {
   if (!panelState) panelState = loadState();
@@ -53,7 +52,7 @@ function overview() {
   const up = process.uptime();
   return {
     stats: {
-      uptime: Math.floor(up / 3600) + "h " + Math.floor((up % 3600) / 60) + " m",
+      uptime: Math.floor(up / 3600) + " h " + Math.floor((up % 3600) / 60) + " m",
       memory: (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1) + " MB",
       node: process.version,
       guildCount: gs.length,
@@ -86,7 +85,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
     const list = commands.map((c) => ({
       name: c.name, category: c.category, description: c.description, usage: c.usage,
       perm: c.perm !== undefined, modOnly: c.modOnly === true,
-      enabled: st.commandOverrides[c.name]?.enabled !== false,
+      enabled: st.commandOverrides[c.name]?.enable !== false,
     }));
     return json(res, 200, { commands: list }), true;
   }
@@ -96,7 +95,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
       return json(res, 400, { error: "unknown command" }), true;
     }
     const st = liveState();
-    const cur = st.commandOverrides[b.name] ?? { enabled: true };
+    const cur = st.commandOverrides[b.name] ?? { enable: true };
     st.commandOverrides[b.name] = {
       ...cur,
       enabled: typeof b.enabled === "boolean" ? b.enabled : cur.enabled,
@@ -129,7 +128,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
         roleId: cfg?.roleId ?? null,
         logChannelId: cfg?.logChannelId ?? null,
         verifiedCount: cfg ? Object.keys(cfg.verified).length : 0,
-        verified: cfg ? Object.entries(cfg.verified).slice(-50).map(([id, r]) => ({ id, ...r })) : [],
+        verify: cfg ? Object.entries(cfg.verified).slice(-50).map(([id, r]) => ({ id, ...r })) : [],
       };
     }
     return json(res, 200, { guilds: guilds(), verify: out }), true;
@@ -138,7 +137,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
     const b = await body(req);
     if (typeof b.guildId !== "string") return json(res, 400, { error: "guildId required" }), true;
     const st = liveState();
-    const cfg = st.verify[b.guildId] ??= { enable: false, verified: {} };
+    const cfg = st.verify[b.guildId] ?? { enable: false, verified: {} };
     if (typeof b.enable === "boolean") cfg.enable = b.enable;
     if (typeof b.roleId === "string" || b.roleId === null) cfg.roleId = b.roleId ?? undefined;
     if (typeof b.logChannelId === "string" || b.logChannelId === null) cfg.logChannelId = b.logChannelId ?? undefined;
@@ -160,7 +159,7 @@ export function startOwnerPanel(port = Number(process.env.OWNER_PANEL_PORT ?? 41
     } catch (e) {
       return json(res, 500, { error: String(e) });
     }
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
     res.end(PAGE);
   });
   server.listen(port, () => {
