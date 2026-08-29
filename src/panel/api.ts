@@ -45,6 +45,58 @@ function guilds() {
   }));
 }
 
+/** Full detail for one guild: members, channels grouped by category, roles, settings. */
+async function guildDetail(id: string): Promise<Record<string, unknown> | null> {
+  if (!panelClient) return null;
+  const g: any = panelClient.guilds.cache.get(id);
+  if (!g) return null;
+  // Best effort to fill the member cache (Discord only sends a slice on ready).
+  try { await g.members.fetch({ limit: 500 }); } catch { /* offline / missing perms */ }
+  const st = livestate();
+  const gcfg = st.guildConfig[id] ?? {};
+  const all: any[] = [...g.channels.cache.values()];
+  const categories = all
+    .filter(c => c.type === 4)
+    .map(cat => ({
+      id: cat.id,
+      name: cat.name,
+      children: all
+        .filter(c => c.parentId === cat.id)
+        .map(c => ({ id: c.id, name: c.name, type: String(c.type) })),
+    }));
+  const uncategorized = all
+    .filter(c => c.type !== 4 && !c.parentId)
+    .map(c => ({ id: c.id, name: c.name, type: String(c.type) }));
+  const members = [...g.members.cache.values()]
+    .slice(0, 500)
+    .map(m => ({
+      id: m.id,
+      tag: m.user?.tag ?? m.user?.username ?? m.id,
+      nickname: m.nickname ?? "",
+      roles: m.roles.cache.filter((r: any) => r.id !== g.id).size,
+    }));
+  return {
+    id: g.id,
+    name: g.name,
+    memberCount: g.memberCount ?? 0,
+    owner: g.ownerId,
+    roles: [...g.roles.cache.values()]
+      .filter(r => r.id !== g.id)
+      .map(r => ({ id: r.id, name: r.name })),
+    categories,
+    uncategorized,
+    members,
+    config: {
+      prefix: gcfg.prefix ?? "!",
+      welcome: gcfg.welcome ?? "",
+      goodbye: gcfg.goodbye ?? "",
+      autoRole: gcfg.autoRole ?? "",
+      warnThreshold: gcfg.warnThreshold ?? 3,
+    },
+    verify: st.verify[id] ?? { enabled: false, verified: {} },
+  };
+}
+
 function overview() {
   const st = livestate();
   const ecoAccounts = Object.keys(st.eco).length;
@@ -138,7 +190,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
     for (const g of guilds()) {
       const cfg = st.verify[g.id];
       out[g.id] = {
-        enable: cfg?.enable ?? false,
+        enable: cfg?.enabled ?? false,
         roleId: cfg?.roleId ?? null,
         logChannelId: cfg?.logChannelId ?? null,
         verifiedCount: cfg ? Object.keys(cfg.verified).length : 0,
@@ -151,12 +203,20 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
     const b = await body(req);
     if (typeof b.guildId !== "string") return json(res, 400, { error: "guildId required" }), true;
     const st = livestate();
-    const cfg = st.verify[b.guildId] ?? { enable: false, verified: {} };
-    if (typeof b.enable === "boolean") cfg.enable = b.enable;
+    const cfg = st.verify[b.guildId] ?? { enabled: false, verified: {} };
+    // The config field is `enabled` (VerifyConfig). Writing `cfg.enable` here
+    // used to leave `enabled` false, so !verify kept saying "disabled".
+    if (typeof b.enable === "boolean") cfg.enabled = b.enable;
     if (typeof b.roleId === "string" || b.roleId === null) cfg.roleId = b.roleId ?? undefined;
     if (typeof b.logChannelId === "string" || b.logChannelId === null) cfg.logChannelId = b.logChannelId ?? undefined;
     saveState(st);
     return json(res, 200, { ok: true }), true;
+  }
+  if (p.startsWith("/api/guild/") && req.method === "GET") {
+    const id = p.slice("/api/guild/".length);
+    const d = await guildDetail(id);
+    if (!d) return json(res, 404, { error: "guild not found (bot offline or not in that server)" }), true;
+    return json(res, 200, d), true;
   }
   return false;
 }
