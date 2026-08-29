@@ -1,8 +1,9 @@
 import { createInterface } from "node:readline";
-import { readFileSync } from "node:fs";
 import { loadEnvFile } from "./llm.js";
 import { Agent } from "./agent.js";
 import { startWatchdog } from "./watchdog.js";
+import { startPanel, setPanelState } from "./panel.js";
+import { logAudit } from "./audit.js";
 
 loadEnvFile();
 
@@ -12,24 +13,28 @@ const OWNER_DISCORD_IDS = (process.env.OWNER_DISCORD_IDS ?? "")
 async function main() {
   const mode = process.argv[2] ?? "chat";
   const name = process.env.PERSONA_NAME ?? "Yoru";
-  const { version } = JSON.parse(readFileSync("package.json", "utf8")) as { version: string };
 
   if (mode === "discord" || process.env.DISCORD_TOKEN) {
+    startPanel();
     const { startDiscord } = await import("./discord.js");
     await startDiscord(OWNER_DISCORD_IDS);
     return; // discord.ts keeps the process alive
   }
 
   // terminal mode
+  startPanel();
   const confirm = (q: string) =>
     new Promise<boolean>((res) => {
       const rl = createInterface({ input: process.stdin, output: process.stdout });
-      rl.question(`${q} `, (a) => { rl.close(); res(/^(y|yes)$/i.test(a.trim())); });
+      rl.question(`${q} `, (a) => { rl.close(); res(/^y(es)?$/i.test(a.trim())); });
     });
   const agent = new Agent({ owner: true, sender: "terminal", confirm, say: async (t) => console.log(t) });
+  logAudit({ time: new Date().toISOString(), actor: "terminal", action: "session_start" });
+  setPanelState({ name, status: "idle", activity: "Terminal session started" });
   console.log(
-    `${name} (yoru-lite v${version}) — backend: ${process.env.LLM_BACKEND ?? "ollama"}, model: ${process.env.OLLAMA_MODEL ?? "llama3.2:3b"}\n` +
-    `Terminal mode. Type your message, or "exit" to quit.\n`
+    `${name} (yoru-lite v0.4) — backend: ${process.env.LLM_BACKEND ?? "ollama"}, model: ${process.env.OLLAMA_MODEL ?? "llama3.2:3b"}\n` +
+    `Terminal mode. Visual panel: http://localhost:${process.env.PANEL_PORT ?? 4173}\n` +
+    `Type your message, or "exit" to quit.\n`,
   );
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   rl.on("line", (line) => {

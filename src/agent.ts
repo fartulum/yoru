@@ -1,5 +1,7 @@
 import { makeLLM, type ChatMessage } from "./llm.js";
 import { tools, loadMemory, type ToolContext } from "./tools/index.js";
+import { logAudit, isKilled } from "./audit.js";
+import { setPanelState } from "./panel.js";
 import { readFileSync as rf, existsSync } from "node:fs";
 
 const PERSONA_PATH = "config/persona.md";
@@ -45,6 +47,7 @@ export class Agent {
   }
 
   async handle(input: string): Promise<string> {
+    setPanelState({ status: "thinking", activity: input.slice(0, 120) });
     this.history.push({ role: "user", content: input });
     for (let round = 0; round < 8; round++) {
       const reply = await this.llm.chat(this.history, tools.map((t) => t.def));
@@ -53,15 +56,27 @@ export class Agent {
         content: reply.content,
         ...(reply.tool_calls ? { tool_calls: reply.tool_calls } : {}),
       });
-      if (!reply.tool_calls?.length) return reply.content.trim() || "(no reply)";
+      if (!reply.tool_calls?.length) {
+        setPanelState({ status: "idle", activity: "Waiting" });
+        return reply.content.trim() || "(no reply)";
+      }
+      setPanelState({ status: "working", activity: `running ${reply.tool_calls.map((c) => c.function.name).join(", ")}` });
       for (const call of reply.tool_calls) {
         let result: string;
         try {
           const args = JSON.parse(call.function.arguments || "{}") as Record<string, unknown>;
           const tool = tools.find((t) => t.def.function.name === call.function.name);
-          result = tool
-            ? await tool.run(args, this.ctx)
-            : `ERROR: unknown tool ${call.function.name}`;
+          // kill switch: only recovery tools pass while armed
+          const RECOVERY = new Set(["unlock", "kill_switch"]);
+          if (isKilled() && tool && !RECOVERY.has(tool.def.function.name)) {
+            result = "BLOCKED: kill switch is armed. Only unlock/kill_switch respond. Owner can disarm via terminal or Discord (owner-only).";
+            logAudit({ time: new Date().toISOString(), actor: this.opts.sender, action: call.function.name, detail: "blocked by kill switch", allowed: false });
+          } else if (tool) {
+            result = await tool.run(args, this.ctx);
+            logAudit({ time: new Date().toISOString(), actor: this.opts.sender, action: call.function.name, detail: JSON.stringify(args).slice(0, 300), allowed: !result.startsWith("Blocked") });
+          } else {
+            result = `ERROR: unknown tool ${call.function.name}`;
+          }
         } catch (e) {
           result = `ERROR: invalid arguments — ${(e as Error).message}`;
         }
