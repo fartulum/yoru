@@ -23,6 +23,7 @@ export interface LLMClient {
   chat(
     messages: ChatMessage[],
     tools: ToolDef[],
+    onToken?: (token: string) => void,
   ): Promise<{
     content: string;
     tool_calls?: ToolCall[];
@@ -74,7 +75,7 @@ export class OllamaClient implements LLMClient {
         stream: true,
         options: {
           num_predict: Number(env("OLLAMA_NUM_PREDICT", "512")) || 512,
-          keep_alive: env("OLLAMA_KEEP_ALIVE", "30m"),
+          keep_alive: env("OLLAMA_KEEP_ALIVE", "30m")
         },
       }),
     });
@@ -144,8 +145,20 @@ export class OpenAICompatClient implements LLMClient {
   }
 }
 
-export function makeLLM(): LLMClient {
-  return env("LLM_BACKEND", "ollama") === "openai"
-    ? new OpenAICompatClient()
-    : new OllamaClient();
+/**
+ * Build the LLM client from LLM_BACKEND:
+ * - "ollama"    (local, default)
+ * - "openai"    (any OpenAI-compatible API)
+ * - "openrouter" (free-model auto-discovery + failover)
+ */
+export async function makeLLM(): Promise<LLMClient> {
+  const backend = env("LLM_BACKEND", "ollama");
+  if (backend === "openrouter") {
+    const { OpenRouterClient } = await import("./openrouter");
+    const key = env("OPENROUTER_API_KEY");
+    if (!key) throw new Error("LLM_BACKEND=openrouter requires OPENROUTER_API_KEY in .env");
+    return new OpenRouterClient(key);
+  }
+  if (backend === "openai") return new OpenAICompatClient();
+  return new OllamaClient();
 }
