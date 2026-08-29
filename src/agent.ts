@@ -1,4 +1,4 @@
-import { makeLLM, type ChatMessage } from "./llm.js";
+import { makeLLM, trimHistory, type ChatMessage } from "./llm.js";
 import { tools, loadMemory, type ToolContext } from "./tools/index.js";
 import { logAudit, isKilled } from "./audit.js";
 import { setPanelState } from "./panel.js";
@@ -50,7 +50,8 @@ export class Agent {
     setPanelState({ status: "thinking", activity: input.slice(0, 120) });
     this.history.push({ role: "user", content: input });
     for (let round = 0; round < 8; round++) {
-      const reply = await this.llm.chat(this.history, tools.map((t) => t.def));
+      // Send only the recent history to keep the prompt small and fast.
+      const reply = await this.llm.chat(trimHistory(this.history), tools.map((t) => t.def));
       this.history.push({
         role: "assistant",
         content: reply.content,
