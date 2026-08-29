@@ -31,7 +31,7 @@ function guilds() {
       .map((r) => ({ id: r.id, name: r.name })),
     channels: [...g.channels.cache.values()]
       .filter((c) => (c as any).isTextBased?.())
-      .map((c) => ({ id: c.id, name: c.name })),
+      .map((c) => ({ id: c.id, name: (c as any).name })),
   }));
 }
 
@@ -68,7 +68,7 @@ async function body(req: IncomingMessage): Promise<any> {
   try { return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); } catch { return {}; }
 }
 
-function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
+async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
   const p = url.pathname;
   if (p === "/api/overview" && req.method === "GET") return json(res, 200, overview()), true;
   if (p === "/api/commands" && req.method === "GET") {
@@ -86,10 +86,10 @@ function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): boolean
     if (typeof b.name !== "string" || !commands.find((c) => c.name === b.name)) {
       return json(res, 400, { error: "unknown command" }), true;
     }
-    const cur = panelState.commandOverrides[b.name] ?? { enabled: true };
+    const cur = panelState.commandOverrides[b.name] ?? { enable: true };
     panelState.commandOverrides[b.name] = {
       ...cur,
-      enabled: typeof b.enabled === "boolean" ? b.enabled : cur.enabled,
+      enable: typeof b.enable === "boolean" ? b.enable : cur.enable,
       modOnly: typeof b.modOnly === "boolean" ? b.modOnly : cur.modOnly,
     };
     saveState(panelState);
@@ -115,7 +115,7 @@ function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): boolean
     for (const g of guilds()) {
       const cfg = st?.verify[g.id];
       out[g.id] = {
-        enabled: cfg?.enabled ?? false,
+        enable: cfg?.enable ?? false,
         roleId: cfg?.roleId ?? null,
         logChannelId: cfg?.logChannelId ?? null,
         verifiedCount: cfg ? Object.keys(cfg.verified).length : 0,
@@ -128,8 +128,8 @@ function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): boolean
     if (!panelState) return json(res, 500, { error: "state not ready" }), true;
     const b = await body(req);
     if (typeof b.guildId !== "string") return json(res, 400, { error: "guildId required" }), true;
-    const cfg = panelState.verify[b.guildId] ??= { enabled: false, verified: {} };
-    if (typeof b.enabled === "boolean") cfg.enabled = b.enabled;
+    const cfg = panelState.verify[b.guildId] ??= { enable: false, verified: {} };
+    if (typeof b.enable === "boolean") cfg.enable = b.enable;
     if (typeof b.roleId === "string" || b.roleId === null) cfg.roleId = b.roleId ?? undefined;
     if (typeof b.logChannelId === "string" || b.logChannelId === null) cfg.logChannelId = b.logChannelId ?? undefined;
     saveState(panelState);
