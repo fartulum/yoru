@@ -51,6 +51,10 @@ label{display:block;font-size:12px;color:var(--dim);margin:10px 0 5px}
 .toast.show{opacity:1;transform:none}
 section{display:none}
 section.on{display:block}
+.gcard{cursor:pointer;transition:.2s}
+.gcard:hover{border-color:var(--acc);box-shadow:0 0 22px rgba(124,58,237,.35)}
+.back{margin-bottom:14px}
+.subhead{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;margin:18px 0 8px}
 </style></head><body>
 <div class="orb a"></div><div class="orb b"></div>
 <div class="wrap">
@@ -61,10 +65,10 @@ section.on{display:block}
 </header>
 <nav>
   <button data-tab="stats" class="on">📊 Statistics</button>
-  <button data-tab="commands">⌨️ Commands</button>
+  <button data-tab="commands">✨ Commands</button>
   <button data-tab="economy">💰 Economy</button>
   <button data-tab="verify">✅ Verification</button>
-  <button data-tab="servers">🌐 Servers</button>
+  <button data-tab="servers">🖥️ Servers</button>
   <button data-tab="audit">📜 Audit log</button>
 </nav>
 
@@ -97,6 +101,7 @@ section.on{display:block}
 
 <section id="servers">
   <div class="card"><h2>Servers</h2><div id="serverlist"></div></div>
+  <div class="card" id="guilddetail" style="display:none"></div>
 </section>
 
 <section id="audit">
@@ -182,19 +187,55 @@ async function saveVerify(guildId,patch){
 
 async function loadServers(){
   const d = await api('/api/overview');
+  $('guilddetail').style.display='none';
   $('serverlist').innerHTML = d.guilds.map(g=>
-    '<div class="card"><h2 class="gname">'+esc(g.name)+'</h2><div class="muted">'+g.memberCount+' members · '+g.id+'</div></div>'
+    '<div class="card gcard" data-gid="'+esc(g.id)+'"><h2 class="gname">'+esc(g.name)+'</h2><div class="muted">'+g.memberCount+' members · '+esc(g.id)+' · click to view details</div></div>'
   ).join('') || '<p class="muted">No servers yet.</p>';
+  $('serverlist').querySelectorAll('.gcard').forEach(c=>c.onclick=()=>openGuild(c.dataset.gid));
+}
+
+async function openGuild(id){
+  let d;
+  try { d = await api('/api/guild/'+encodeURIComponent(id)); }
+  catch(e){ toast('Could not load server details'); return; }
+  const el = $('guilddetail');
+  el.style.display='block';
+  const cats = (d.categories||[]).map(cat=>
+    '<div class="card"><h2>'+esc(cat.name)+' <span class="badge">category</span></h2>'+
+    cat.children.map(c=>'<div>· '+esc(c.name)+' <span class="muted">'+esc(c.type)+'</span></div>').join('')+'</div>'
+  ).join('');
+  const uncat = (d.uncategorized||[]).map(c=>'<div>· '+esc(c.name)+' <span class="muted">'+esc(c.type)+'</span></div>').join('');
+  const roles = (d.roles||[]).map(r=>'<span class="badge">'+esc(r.name)+'</span>').join(' ');
+  const members = (d.members||[]).map(m=>'<tr><td>'+esc(m.tag)+'</td><td>'+esc(m.nickname||'')+'</td><td>'+m.roles+'</td></tr>').join('');
+  el.innerHTML =
+    '<button class="btn back" id="gback">← Back to servers</button>'+
+    '<h2 class="gname">'+esc(d.name)+'</h2>'+
+    '<div class="muted">'+d.memberCount+' members · owner &lt;'+esc(d.owner)+'&gt;</div>'+
+    '<div class="subhead">Settings</div>'+
+    '<div class="grid">'+
+      '<div><label>Prefix</label><input value="'+esc(d.config.prefix)+'" readonly></div>'+
+      '<div><label>Auto role</label><input value="'+esc(d.config.autoRole||'(none)')+'" readonly></div>'+
+      '<div><label>Warn threshold</label><input value="'+esc(d.config.warnThreshold)+'" readonly></div>'+
+      '<div><label>Verification</label><input value="'+(d.verify&&d.verify.enabled?'enabled':'disabled')+'" readonly></div>'+
+    '</div>'+
+    '<div class="subhead">Roles</div><div>'+roles+'</div>'+
+    '<div class="subhead">Channels</div>'+
+    (uncat?'<div class="card"><h2>No category</h2>'+uncat+'</div>':'')+
+    cats+
+    '<div class="subhead">Members (first '+(d.members||[]).length+')</div>'+
+    '<div style="overflow:auto;max-height:400px"><table><thead><tr><th>User</th><th>Nickname</th><th>Roles</th></tr></thead><tbody>'+members+'</tbody></table></div>';
+  $('gback').onclick=()=>{el.style.display='none';};
+  el.scrollIntoView({behavior:'smooth'});
 }
 
 /* Load a tab's data. Called on tab switch only — never on a timer, so
    in-progress form edits are never wiped by a background refresh. */
 function loadTab(tab){
-  if(tab==='commands') safe(loadCommands);
-  if(tab==='economy') safe(loadEco);
-  if(tab==='verify') safe(loadVerify);
-  if(tab==='servers') safe(loadServers);
-  if(tab==='audit') safe(loadStats);
+  if(tab==='commands')safe(loadCommands);
+  if(tab==='economy')safe(loadEco);
+  if(tab==='verify')safe(loadVerify);
+  if(tab==='servers')safe(loadServers);
+  if(tab==='audit')safe(loadStats);
 }
 
 $('cmdtable').addEventListener('change',e=>{const t=e.target;if(t.dataset.cmd)toggleCmd(t.dataset.cmd,t.checked);});
@@ -210,6 +251,6 @@ $('saveeco').onclick=saveEco;
 const safe=fn=>{try{fn()}catch(e){console.error(e)}};
 safe(loadCommands);safe(loadEco);safe(loadVerify);safe(loadServers);
 /* Poll only the lightweight stats header; tab bodies are static until you switch tabs. */
-async function tick(){try{await loadStats();}catch(e){$('status').textContent='offline';}}
+async function tick(){try{await loadStats()}catch(e){$('status').textContent='offline'}}
 tick();setInterval(tick,4000);
 </script></body></html>`;
