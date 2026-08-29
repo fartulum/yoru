@@ -1,4 +1,4 @@
-import { base, ok, fail, clampInt, pick } from "./shared.js";
+import { base, ok, fail, clampInt, pick, ch } from "./shared.js";
 import type { BotCommand } from "./types.js";
 
 const EMOJIS = ["😀", "😎", "🤖", "🔥", "💎", "🚀", "🌙", "⭐", "🎮", "🍕", "🎧", "🦊"];
@@ -53,7 +53,7 @@ export const utilityCommands: BotCommand[] = [
     const text = ctx.args.slice(1).join(" ");
     if (!mins || !text) return void (await fail(ctx.msg, "Usage", "`!remind <minutes> <message>`"));
     setTimeout(async () => {
-      await ctx.msg.channel.send({ embeds: [base("utility", "Reminder", `${ctx.msg.author}, you asked me to remind you:\n> ${text}`)] }).catch(() => {});
+      await ch(ctx.msg).send({ embeds: [base("utility", "Reminder", `${ctx.msg.author}, you asked me to remind you:\n> ${text}`)] }).catch(() => {});
     }, mins * 60_000);
     await ok(ctx.msg, "utility", "Reminder Set", `I'll ping you in **${mins} min**.`);
   } },
@@ -72,7 +72,7 @@ export const utilityCommands: BotCommand[] = [
     const v = parseFloat(ctx.args[0] ?? "");
     const from = (ctx.args[1] ?? "").toLowerCase(), to = (ctx.args[2] ?? "").toLowerCase();
     if (!Number.isFinite(v)) return void (await fail(ctx.msg, "Usage", "`!convert <value> <unit> <to>` e.g. `!convert 10 km mi`"));
-    const table: Record<string, Record<string, number>> = {
+    const table: Record<string, Record<string, number | ((x: number) => number)>> = {
       km: { mi: 0.621371, m: 1000 },
       mi: { km: 1.60934 },
       kg: { lb: 2.20462 },
@@ -91,7 +91,7 @@ export const utilityCommands: BotCommand[] = [
     const [q, ...opts] = parts;
     const e = base("utility", "Poll", q);
     opts.slice(0, 10).forEach((o, i) => e.addFields({ name: `${EMOJIS[i]} Option ${i + 1}`, value: o, inline: true }));
-    const m = await ctx.msg.channel.send({ embeds: [e] });
+    const m = await ch(ctx.msg).send({ embeds: [e] });
     for (let i = 0; i < Math.min(opts.length, 10); i++) await m.react(EMOJIS[i]).catch(() => {});
   } },
   { name: "weather", category: "utility", description: "Weather placeholder (needs API key)", usage: "!weather <city>", async run(ctx) {
