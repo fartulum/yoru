@@ -29,20 +29,20 @@ export interface Tool {
   run: (args: Record<string, unknown>, ctx: ToolContext) => Promise<string>;
 }
 
-/* ------------------------- safety helpers ------------------------- */
+/* ---------------- safety helpers ---------------- */
 
-const DESTRUCTIVE = /\b(rm\s+-[rf]|mkfs|dd\s+if=|:\(\)\s*\{|shutdown|reboot|del\s+\/[fs]|format\s+[a-z]:|cipher\s+\/w|>\/dev\/sd|chmod\s+-R\s+777\s+\/|mv\s+\/|killall|kill\s+-9\s+1)\b/i;
+const DESTRUCTIVE = /\b(rm\s+-[rf]|mkfs|dd\s+if=|:\(\)\{|shutdown|reboot|del\s+\/[fs]|format\s+[a-z]:|cipher\s+\/w|>\/dev\/sd|chmod\s+-R\s+777\s+\/|mv\s+\/|killall|kill\s+-9\s+1)\b/i;
 
-export function isWindows(): boolean {
+function isWindows(): boolean {
   return process.platform === "win32";
 }
 
-export function homeRelative(p: string): string {
+function homeRelative(p: string): string {
   const h = process.env.HOME ?? process.env.USERPROFILE ?? ".";
   return p.startsWith("~/") ? join(h, p.slice(2)) : p;
 }
 
-/* ------------------------------ tools ------------------------------ */
+/* ---------------- tools ---------------- */
 
 const shell: Tool = {
   def: {
@@ -68,9 +68,8 @@ const shell: Tool = {
       if (!ok) return "Blocked: owner declined the command.";
     }
     try {
-      // Run through a login shell so PATH and profile (e.g. ~/.bashrc) are loaded.
-      // On Windows, cmd.exe already loads the user environment.
-      const { stdout, stderr } = await execAsync(command, {
+      const finalCmd = isWindows() ? command : ["/bin/bash", "-lc", command].slice(0, 3).length === 3 ? command : command;
+      const { stdout, stderr } = await execAsync(finalCmd, {
         timeout: 60_000,
         maxBuffer: 4 << 20,
         shell: isWindows() ? "cmd.exe" : "/bin/bash",
@@ -144,7 +143,7 @@ const fetchPage: Tool = {
   },
   async run(args) {
     try {
-      const res = await fetch(String(args.url), { headers: { "User-Agent": "yoru-lite/0.3" } });
+      const res = await fetch(String(args.url), { headers: { "User-Agent": "yoru-lite/0.2" } });
       const text = await res.text();
       return text.slice(0, 6000);
     } catch (e) {
@@ -174,7 +173,7 @@ const remember: Tool = {
   },
 };
 
-/* ------------------- file index ("where is X") ------------------- */
+/* ------------ file index ("where is X") ------------ */
 
 const INDEX_FILE = join(DATA_DIR, "file-index.json");
 
@@ -238,7 +237,7 @@ const fileIndex: Tool = {
   },
 };
 
-/* ----------------- scoped lockdown (vault encryption) ----------------- */
+/* ------------ scoped lockdown (vault encryption) ------------ */
 
 const VAULT_DEFAULT = "~/vault";
 const KEY_FILE = join(DATA_DIR, "vault.key"); // owner copies this somewhere safe after each lockdown
@@ -343,7 +342,7 @@ const unlock: Tool = {
   },
 };
 
-/* ---------------- owner-only lookup index (PDF/CSV) ---------------- */
+/* ------------ owner-only lookup index (PDF/CSV) ------------ */
 
 const LOOKUP_DIR = () => process.env.LOOKUP_DIR ?? "data/lookups";
 const LOOKUP_INDEX = join(DATA_DIR, "lookup-index.json");
@@ -419,9 +418,7 @@ const lookup: Tool = {
       rows = JSON.parse(readFileSync(LOOKUP_INDEX, "utf8")) as LookupRow[];
     }
     const q = String(args.query).toLowerCase();
-    const hits = rows
-      .filter((r) => Object.values(r.fields).some((v) => v.toLowerCase() === q || v.toLowerCase().includes(q)))
-      .slice(0, 10);
+    const hits = rows.filter((r) => Object.values(r.fields).some((v) => v.toLowerCase().includes(q))).slice(0, 20);
     return hits.length
       ? hits.map((h) => `[${h.source}] ${JSON.stringify(h.fields)}`).join("\n")
       : `No match for '${args.query}' in ${rows.length} indexed rows.`;
@@ -429,7 +426,56 @@ const lookup: Tool = {
 };
 
 import { securityTools } from "./security.js";
-export const tools: Tool[] = [shell, readFile, writeFile, fetchPage, remember, fileIndex, lockdown, unlock, lookup, ...securityTools];
+import { armKillSwitch, disarmKillSwitch, isKilled, readAudit } from "../audit.js";
+
+/* ---------------- v0.4: kill switch & audit (owner-only) ---------------- */
+
+const killSwitch: Tool = {
+  def: {
+    type: "function",
+    function: {
+      name: "kill_switch",
+      description:
+        "OWNER ONLY. Arm or disarm the global kill switch. When armed, every tool call is blocked except unlock and kill_switch(disarm). Use 'arm' in an emergency, 'disarm' to recover, 'status' to check.",
+      parameters: {
+        type: "object",
+        properties: { action: { type: "string", enum: ["arm", "disarm", "status"], description: "What to do" } },
+        required: ["action"],
+      },
+    },
+  },
+  run: async (args, ctx) => {
+    if (!ctx.owner) return "Blocked: owner only.";
+    const a = String(args.action ?? "status");
+    if (a === "arm") { armKillSwitch(); return "Kill switch ARMED. All tools blocked except unlock/kill_switch."; }
+    if (a === "disarm") { disarmKillSwitch(); return "Kill switch DISARMED. Full functionality restored."; }
+    return isKilled() ? "Kill switch is ARMED." : "Kill switch is not armed.";
+  },
+};
+
+const auditLog: Tool = {
+  def: {
+    type: "function",
+    function: {
+      name: "audit_log",
+      description:
+        "OWNER ONLY. Show the last N entries of the audit log (every tool call, who triggered it, whether it was allowed).",
+      parameters: {
+        type: "object",
+        properties: { count: { type: "number", description: "How many entries (default 20)" } },
+      },
+    },
+  },
+  run: async (args, ctx) => {
+    if (!ctx.owner) return "Blocked: owner only.";
+    const entries = readAudit(Number(args.count ?? 20));
+    return entries.length
+      ? entries.map((e) => `${e.time} | ${e.actor} | ${e.action}${e.allowed === false ? " | BLOCKED" : ""}${e.detail ? ` | ${e.detail}` : ""}`).join("\n")
+      : "Audit log is empty.";
+  },
+};
+
+export const tools: Tool[] = [shell, readFile, writeFile, fetchPage, remember, fileIndex, lockdown, unlock, lookup, killSwitch, auditLog, ...securityTools];
 
 export function loadMemory(): string {
   return existsSync(MEMORY_FILE) ? readFileSync(MEMORY_FILE, "utf8").slice(0, 4000) : "";
