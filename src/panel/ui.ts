@@ -84,7 +84,7 @@ section.on{display:block}
   <div class="card"><h2>Economy settings</h2>
     <p class="muted">Tune rewards and cooldowns. Saved to data/economy_settings.json and used live by the economy commands.</p>
     <div class="grid" id="ecogrid"></div>
-    <div style="margin-top:16px"><button class="btn primary" onclick="saveEco()">Save economy settings</button></div>
+    <div style="margin-top:16px"><button class="btn primary" id="saveeco">Save economy settings</button></div>
   </div>
 </section>
 
@@ -120,7 +120,7 @@ async function loadStats(){
   $('statgrid').innerHTML = [
     ['Uptime', s.uptime], ['Memory', s.memory], ['Node', s.node],
     ['Servers', s.guildCount], ['Members', s.totalMembers],
-    ['Commands', s.commandCount], ['Economy accounts', s.ecoAccounts], ['Verified users', s.verified],
+    ['Commands', s.commandCount], ['Economy accounts', s.ecoAccounts], ['Verified users', s.verified]
   ].map(([k,v])=>'<div class="stat"><div class="v">'+esc(v)+'</div><div class="k">'+esc(k)+'</div></div>').join('');
   const lines = d.audit.map(e=>'<div><b>'+esc(e.time.slice(11,19))+'</b> '+esc(e.actor)+' — '+esc(e.action)+(e.allowed===false?' <span class="no">BLOCKED</span>':'')+'</div>');
   $('auditmini').innerHTML = lines.slice(0,14).join('') || '<div>no activity yet</div>';
@@ -132,7 +132,7 @@ async function loadCommands(){
   $('cmdtable').querySelector('tbody').innerHTML = d.commands.map(c=>
     '<tr><td><code>'+esc(c.usage)+'</code></td><td>'+esc(c.category)+'</td><td>'+esc(c.description)+'</td>'+
     '<td>'+(c.perm?'<span class="badge">permission</span> ':'')+(c.modOnly?'<span class="badge">mod only</span>':'')+'</td>'+
-    '<td><label class="switch"><input type="checkbox" '+(c.enabled?'checked':'')+' onchange="toggleCmd(\''+c.name+'\',this.checked)"><span class="slider"></span></label></td></tr>'
+    '<td><label class="switch"><input type="checkbox" '+(c.enabled?'checked':'')+' data-cmd="'+esc(c.name)+'"><span class="slider"></span></label></td></tr>'
   ).join('');
 }
 async function toggleCmd(name,on){
@@ -145,7 +145,7 @@ const ECO_FIELDS = [
   ['workMin','Work pay min'], ['workMax','Work pay max'], ['workCooldownMin','Work cooldown (min)'],
   ['crimeCooldownMs','Crime cooldown (ms)'], ['stealCooldownMs','Steal cooldown (ms)'],
   ['fishCooldownMs','Fish cooldown (ms)'], ['huntCooldownMs','Hunt cooldown (ms)'],
-  ['digCooldownMs','Dig cooldown (ms)'], ['lotteryTicket','Lottery ticket price'], ['bankInterest','Bank interest (x)'],
+  ['digCooldownMs','Dig cooldown (ms)'], ['lotteryTicket','Lottery ticket price'], ['bankInterest','Bank interest (x)']
 ];
 async function loadEco(){
   const s = await api('/api/economy');
@@ -165,11 +165,11 @@ async function loadVerify(){
     const v = d.verify[g.id]||{};
     const roleOpts = '<option value="">(none)</option>'+g.roles.map(r=>'<option value="'+r.id+'" '+(v.roleId===r.id?'selected':'')+'>'+esc(r.name)+'</option>').join('');
     const chOpts = '<option value="">(none)</option>'+g.channels.map(c=>'<option value="'+c.id+'" '+(v.logChannelId===c.id?'selected':'')+'>'+esc(c.name)+'</option>').join('');
-    return '<div class="card"><h2 class="gname">'+esc(g.name)+'</h2>'+
+    return '<div class="card" data-guild="'+esc(g.id)+'"><h2 class="gname">'+esc(g.name)+'</h2>'+
       '<div class="grid">'+
-      '<div><label>Verification</label><label class="switch"><input type="checkbox" '+(v.enabled?'checked':'')+' onchange="saveVerify(\''+g.id+'\',{enabled:this.checked})"><span class="slider"></span></label></div>'+
-      '<div><label>Verify role</label><select onchange="saveVerify(\''+g.id+'\',{roleId:this.value||null})">'+roleOpts+'</select></div>'+
-      '<div><label>Log channel</label><select onchange="saveVerify(\''+g.id+'\',{logChannelId:this.value||null})">'+chOpts+'</select></div>'+
+      '<div><label>Verification</label><label class="switch"><input type="checkbox" '+(v.enable?'checked':'')+' data-field="enable"><span class="slider"></span></label></div>'+
+      '<div><label>Verify role</label><select data-field="roleId">'+roleOpts+'</select></div>'+
+      '<div><label>Log channel</label><select data-field="logChannelId">'+chOpts+'</select></div>'+
       '<div><label>Verified members</label><div class="stat"><div class="v">'+(v.verifiedCount||0)+'</div></div></div>'+
       '</div></div>';
   }).join('') || '<p class="muted">Bot not connected to any server yet.</p>';
@@ -196,6 +196,17 @@ async function tick(){
     if(on==='servers') await loadServers();
   }catch(e){ $('status').textContent='offline'; }
 }
-loadCommands();loadEco();loadVerify();loadServers();tick();
-setInterval(tick,4000);
+
+$('cmdtable').addEventListener('change',e=>{const t=e.target;if(t.dataset.cmd)toggleCmd(t.dataset.cmd,t.checked);});
+$('verifylist').addEventListener('change',e=>{
+  const t=e.target;const card=t.closest('[data-guild]');if(!card)return;
+  const patch={};
+  if(t.type==='checkbox')patch.enable=t.checked;
+  else if(t.dataset.field==='roleId')patch.roleId=t.value||null;
+  else if(t.dataset.field==='logChannelId')patch.logChannelId=t.value||null;
+  saveVerify(card.dataset.guild,patch);
+});
+$('saveeco').onclick=saveEco;
+const safe=fn=>{try{fn()}catch(e){console.error(e)}};
+safe(loadCommands);safe(loadEco);safe(loadVerify);safe(loadServers);tick();setInterval(tick,4000);
 </script></body></html>`;
