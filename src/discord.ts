@@ -4,17 +4,19 @@ import { loadEnvFile } from "./llm.js";
 import { startWatchdog } from "./watchdog.js";
 import { logAudit } from "./audit.js";
 import { setPanelState } from "./panel.js";
+import { setOwnerPanelState, setOwnerPanelClient } from "./panel/api.js";
 import { playRobotBanner } from "./banner.js";
 import {
   parseCommand, findCommand, isModerator, commandCatalogPrompt,
-  loadState, saveState, getAccount, SHOP_ITEMS, commands,
-  type BotState, type CommandContext,
+  loadState, saveState, getAccount, SHOP_ITEMS, effectiveCommands,
+  type BotState, type CommandContext, type VerifyConfig,
 } from "./commands/index.js";
 
 loadEnvFile();
 
 const agents = new Map<string, Agent>(); // per-channel conversation memory
 const state: BotState = loadState();
+setOwnerPanelState(state);
 let saveTimer: NodeJS.Timeout | undefined;
 function scheduleSave() {
   if (saveTimer) return;
@@ -55,6 +57,7 @@ export async function startDiscord(ownerIds: string[]) {
     ],
     partials: [Partials.Message, Partials.Reaction, Partials.Channel],
   });
+  setOwnerPanelClient(client);
 
   client.once(Events.ClientReady, (c) => {
     console.log(`Discord bot live as ${c.user.tag}. Owner IDs: ${ownerIds.join(", ") || "(none set)"}`);
@@ -87,10 +90,15 @@ export async function startDiscord(ownerIds: string[]) {
     return a;
   }
 
+  /* ----- verification helpers (shared with the owner web panel) ----- */
+  function verifyConfigFor(guildId: string): VerifyConfig {
+    return state.verify[guildId] ??= { enabled: false, verified: {} };
+  }
+
   function buildContext(msg: Message, isOwner: boolean, args: string[], prefix: string): CommandContext {
     return {
       msg, isOwner, args, prefix,
-      allCommands: () => commands,
+      allCommands: () => effectiveCommands(state),
       eco: (id) => getAccount(state, id),
       saveEco: scheduleSave,
       topBalances: () => Object.entries(state.eco)
@@ -133,13 +141,26 @@ export async function startDiscord(ownerIds: string[]) {
       editSnipe: (chId) => state.editSnipes[chId],
       recordSnipe: (chId, s) => { state.snipes[chId] = s; },
       recordEditSnipe: (chId, s) => { state.editSnipes[chId] = s; },
+      // verification
+      verifyConfig: verifyConfigFor,
+      setVerifyRole: (roleId) => { verifyConfigFor(msg.guildId!).roleId = roleId; scheduleSave(); },
+      setVerifyEnabled: (on) => { verifyConfigFor(msg.guildId!).enabled = on; scheduleSave(); },
+      setVerifyLog: (chId) => { verifyConfigFor(msg.guildId!).logChannelId = chId; scheduleSave(); },
+      markVerified: (userId) => { verifyConfigFor(msg.guildId!).verified[userId] = { username: msg.author.username, at: Date.now() }; scheduleSave(); },
+      logVerify: (userId, username) => {
+        const cfg = verifyConfigFor(msg.guildId!);
+        const ch = cfg.logChannelId ? client.channels.cache.get(cfg.logChannelId) : undefined;
+        if ((ch as any)?.isTextBased?.()) {
+          (ch as any).send(`✅ <@${userId}> (${username}) verified.`).catch(() => {});
+        }
+      },
     };
   }
 
   // snipe tracking
   client.on(Events.MessageDelete, (msg) => {
     if (msg.author?.bot || !msg.content) return;
-    state.snipes[msg.channel.id] = { author: msg.author!.tag, content: msg.content.slice(0, 500) };
+    state.snipes[msg.channel.id] = { author: msg.author.tag, content: msg.content.slice(0, 500) };
   });
   client.on(Events.MessageUpdate, (_old, msgNew) => {
     if (msgNew.author?.bot || !msgNew.content) return;
@@ -176,7 +197,7 @@ export async function startDiscord(ownerIds: string[]) {
     // ---- prefix commands: handled WITHOUT the AI agent ----
     const parsed = parseCommand(msg.content, prefix);
     if (parsed) {
-      const cmd = findCommand(parsed.name);
+      const cmd = effectiveCommands(state).find((c) => c.name === parsed.name) ?? findCommand(parsed.name);
       const ctx = buildContext(msg, isOwner, parsed.args, prefix);
       if (!cmd) {
         await msg.reply({
@@ -188,7 +209,7 @@ export async function startDiscord(ownerIds: string[]) {
       // real permission enforcement
       if (cmd.perm && msg.member && !msg.member.permissions.has(cmd.perm) && !isOwner) {
         await msg.reply({
-          embeds: [new EmbedBuilder().setColor(0xed4245).setTitle("Permission Denied").setDescription(`You don't have permission for \`${prefix}${cmd.name}\`.`).setTimestamp()],
+          embeds: [new EmbedBuilder().setColor(0xed4245).setTitle("Permission Denied").setDescription(`You dont have permission for \`${prefix}${cmd.name}\`.`).setTimestamp()],
           allowedMentions: { repliedUser: false },
         });
         return;
