@@ -4,6 +4,7 @@ import { Agent } from "./agent.js";
 import { startWatchdog } from "./watchdog.js";
 import { startPanel, setPanelState } from "./panel.js";
 import { logAudit } from "./audit.js";
+import { playRobotBanner } from "./banner.js";
 
 loadEnvFile();
 
@@ -30,16 +31,18 @@ async function main() {
   if (mode === "discord" || process.env.DISCORD_TOKEN) {
     startPanel();
     const { startDiscord } = await import("./discord.js");
+    playRobotBanner(true, `${bold(cyan(`${name} — Discord mode`))} ${dim("— colored ASCII robot online")}`);
     await startDiscord(OWNER_DISCORD_IDS);
     return; // discord.ts keeps the process alive
   }
 
   // terminal mode
   startPanel();
+  playRobotBanner(false, `${name} (yoru-lite v0.4) — ASCII robot online`);
   const confirm = (q: string) =>
     new Promise<boolean>((res) => {
       const rl = createInterface({ input: process.stdin, output: process.stdout });
-      rl.question(`${yellow("?")} ${q} `, (a) => { rl.close(); res(/^(y|yes)$/i.test(a.trim())); });
+      rl.question(`${yellow("?")} ${q} `, (a) => { rl.close(); res(/^y(es)?$/i.test(a.trim())); });
     });
   const agent = new Agent({ owner: true, sender: "terminal", confirm, say: async (t) => console.log(t) });
   logAudit({ time: new Date().toISOString(), actor: "terminal", action: "session_start" });
