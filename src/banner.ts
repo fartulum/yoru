@@ -1,59 +1,63 @@
 /**
  * Animated ASCII robot banner for the terminal.
  * Plain (chat mode) or colored (discord mode). No dependencies.
+ *
+ * The animation ALWAYS plays, even when stdout is not a TTY (e.g. piped
+ * output). Colors are still auto-disabled when the terminal doesn't
+ * support them (NO_COLOR, or a non-TTY stdout).
  */
 
 export const ROBOT_FRAMES = [
   String.raw`
-     [■■■■■■■■■■]
-    [  Y O R U  ]
-     [■■■■■■■■■■]
+     [▮▮▮▮▮▮▮▮▮]
+     [ Y O R U ]
+     [▮▮▮▮▮▮▮▮▮▮]
         \ (^‿^) /
         |  ___  |
        /| |   | |\
-      d | |___| | b
+       d | |___| | b
         |  U U  |
        /|       |\
-      d |  ___  | b
+       d |  ___  | b
         |_|   |_|
 `,
   String.raw`
-     [■■■■■■■■■■]
-    [  Y O R U  ]
-     [■■■■■■■■■■]
-        \ (⌐■_■) /
+     [▮▮▮▮▮▮▮▮▮]
+     [ Y O R U ]
+     [▮▮▮▮▮▮▮▮▮▮]
+        \ (◕‿◕) /
         |  ___  |
        /| |   | |\
-      d | |___| | b
+       d | |___| | b
         |  U U  |
        /|       |\
-      d |  ___  | b
+       d |  ___  | b
         |_|   |_|
 `,
   String.raw`
-     [■■■■■■■■■■]
-    [  Y O R U  ]
-     [■■■■■■■■■■]
+     [▮▮▮▮▮▮▮▮▮]
+     [ Y O R U ]
+     [▮▮▮▮▮▮▮▮▮▮]
         \ (o‿o) /
         |  ___  |
        /| |   | |\
-      d | |___| | b
+       d | |___| | b
         |  U U  |
        /|       |\
-      d |  ___  | b
+       d |  ___  | b
         |_|   |_|
 `,
   String.raw`
-     [■■■■■■■■■■]
-    [  Y O R U  ]
-     [■■■■■■■■■■]
-        \ (^o^) /
+     [▮▮▮▮▮▮▮▮▮]
+     [ Y O R U ]
+     [▮▮▮▮▮▮▮▮▮▮]
+        \ (^‿^) /
         |  ___  |
        /| |   | |\
-      d | |___| | b
+       d | |___| | b
         |  U U  |
        /|       |\
-      d |  ___  | b
+       d |  ___  | b
         |_|   |_|
 `,
 ];
@@ -73,24 +77,19 @@ function colorize(frame: string): string {
     .split("\n")
     .map((line) => {
       if (line.includes("Y O R U")) return bold(magenta(line));
-      if (line.includes("■")) return cyan(line);
-      if (/\(\S+‿?\S*\)|\(o‿o\)|\(⌐■_■\)/.test(line)) return green(line);
+      if (line.includes("▮")) return cyan(line);
+      if (/(\S[\/]?\S*\)|\(o[\/]o\)|\(‿‿\))/.test(line)) return green(line);
       return yellow(line);
     })
     .join("\n");
 }
 
 /**
- * Play the animated banner once (~1.2s), then leave the final frame on screen.
+ * Play the animated banner ONCE (~1.2s), then leave the final frame on screen.
  * Set `colored` to true for the discord mode (ANSI colors), false for chat mode.
+ * The animation always plays, even on non-TTY stdout.
  */
 export function playRobotBanner(colored: boolean, subtitle?: string): void {
-  if (!useColor) {
-    // No TTY: print a single static frame, no animation.
-    console.log(ROBOT_FRAMES[0]);
-    if (subtitle) console.log(subtitle);
-    return;
-  }
   const frames = colored ? ROBOT_FRAMES.map(colorize) : ROBOT_FRAMES;
   const steps = 8;
   for (let i = 0; i < steps; i++) {
