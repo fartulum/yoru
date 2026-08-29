@@ -1,19 +1,29 @@
-import { Client, GatewayIntentBits, Events, EmbedBuilder, type Message } from "discord.js";
+import { Client, GatewayIntentBits, Events, EmbedBuilder, Partials, type Message } from "discord.js";
 import { Agent } from "./agent.js";
 import { loadEnvFile } from "./llm.js";
 import { startWatchdog } from "./watchdog.js";
 import { logAudit } from "./audit.js";
 import { setPanelState } from "./panel.js";
-import { parseCommand, findCommand, isModerator } from "./commands.js";
+import { playRobotBanner } from "./banner.js";
+import {
+  parseCommand, findCommand, isModerator, commandCatalogPrompt,
+  loadState, saveState, getAccount, SHOP_ITEMS, commands,
+  type BotState, type CommandContext,
+} from "./commands/index.js";
 
 loadEnvFile();
 
 const agents = new Map<string, Agent>(); // per-channel conversation memory
+const state: BotState = loadState();
+let saveTimer: NodeJS.Timeout | undefined;
+function scheduleSave() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => { saveTimer = undefined; saveState(state); }, 2000);
+}
 
 function confirmViaReply(msg: Message) {
   return async (question: string): Promise<boolean> => {
-    await msg.reply(`${question}
-(reply "yes" within 60s to confirm)`);
+    await msg.reply(`${question}(reply "yes" within 60s to confirm)`);
     try {
       const collected = await (msg.channel as any).awaitMessages({
         filter: (m: Message) => m.author.id === msg.author.id && /^(y(es)?)|(no?)$/i.test(m.content.trim()),
@@ -41,18 +51,23 @@ export async function startDiscord(ownerIds: string[]) {
       GatewayIntentBits.GuildMembers,
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.MessageContent,
+      GatewayIntentBits.GuildMessageReactions,
     ],
+    partials: [Partials.Message, Partials.Reaction, Partials.Channel],
   });
 
   client.once(Events.ClientReady, (c) => {
     console.log(`Discord bot live as ${c.user.tag}. Owner IDs: ${ownerIds.join(", ") || "(none set)"}`);
     setPanelState({ status: "idle", activity: "Discord bot connected" });
-    // autonomous watchdog alerts go to the owner's DM channel
     if (ownerIds.length && process.env.WATCHDOG === "on") {
       const ownerAgent = getAgent(`dm:${ownerIds[0]}`, true, `discord:${ownerIds[0]}`);
       startWatchdog(ownerAgent);
     }
   });
+
+  function guildPrefix(guildId: string): string {
+    return state.guildConfig[guildId]?.prefix ?? "!";
+  }
 
   function getAgent(key: string, owner: boolean, sender: string): Agent {
     let a = agents.get(key);
@@ -63,55 +78,147 @@ export async function startDiscord(ownerIds: string[]) {
         confirm: confirmViaReply as any,
         say: async (t) => {
           const ch = client.channels.cache.get(key.slice(3));
-          if (ch?.isTextBased()) await (ch as any).send(t.slice(0, 1900));
+          if ((ch as any)?.isTextBased?.()) await (ch as any).send(t.slice(0, 1900));
         },
+        extraSystem: commandCatalogPrompt(guildPrefix(key.slice(3))),
       });
       agents.set(key, a);
     }
     return a;
   }
 
+  function buildContext(msg: Message, isOwner: boolean, args: string[], prefix: string): CommandContext {
+    return {
+      msg, isOwner, args, prefix,
+      allCommands: () => commands,
+      eco: (id) => getAccount(state, id),
+      saveEco: scheduleSave,
+      topBalances: () => Object.entries(state.eco)
+        .sort((a, b) => b[1].balance - a[1].balance).slice(0, 10)
+        .map(([id, acc], i) => `**${i + 1}.** <@${id}> — ${acc.balance} :coin:`),
+      shopItems: () => SHOP_ITEMS,
+      warns: (id) => state.warns[id] ?? [],
+      saveWarns: scheduleSave,
+      clearWarns: (id) => { delete state.warns[id]; scheduleSave(); },
+      level: (id) => {
+        const xp = state.levels[id] ?? 0;
+        return { level: Math.floor(0.1 * Math.sqrt(xp)) + 1, xp };
+      },
+      addXp: (id, n) => { state.levels[id] = (state.levels[id] ?? 0) + n; scheduleSave(); },
+      topLevels: () => Object.entries(state.levels)
+        .sort((a, b) => b[1] - a[1]).slice(0, 10)
+        .map(([id, xp], i) => `**${i + 1}.** <@${id}> — level ${Math.floor(0.1 * Math.sqrt(xp)) + 1} (${xp} XP)`),
+      counter: () => state.counters[msg.guildId ?? "global"] ?? 0,
+      setCounter: (n) => { state.counters[msg.guildId ?? "global"] = n; scheduleSave(); },
+      setPrefix: (p) => { (state.guildConfig[msg.guildId!] ??= {}).prefix = p; scheduleSave(); },
+      setWelcome: (t) => { (state.guildConfig[msg.guildId!] ??= {}).welcome = t; scheduleSave(); },
+      setGoodbye: (t) => { (state.guildConfig[msg.guildId!] ??= {}).goodbye = t; scheduleSave(); },
+      setAutoRole: (id) => { (state.guildConfig[msg.guildId!] ??= {}).autoRole = id; scheduleSave(); },
+      setWarnThreshold: (n) => { (state.guildConfig[msg.guildId!] ??= {}).warnThreshold = n; scheduleSave(); },
+      setAfk: (id, reason) => { state.afk[id] = reason; scheduleSave(); },
+      afkList: () => Object.entries(state.afk).map(([id, r]) => `<@${id}> — ${r}`),
+      addQuote: (q) => { (state.quotes[msg.guildId ?? "global"] ??= []).push(q); scheduleSave(); },
+      randomQuote: () => {
+        const list = state.quotes[msg.guildId ?? "global"];
+        return list?.length ? list[Math.floor(Math.random() * list.length)] : undefined;
+      },
+      addTodo: (id, t) => { (state.todos[id] ??= []).push(t); scheduleSave(); },
+      todos: (id) => state.todos[id] ?? [],
+      removeTodo: (id, i) => {
+        const list = state.todos[id];
+        if (!list || i < 0 || i >= list.length) return false;
+        list.splice(i, 1); scheduleSave(); return true;
+      },
+      snipe: (chId) => state.snipes[chId],
+      editSnipe: (chId) => state.editSnipes[chId],
+      recordSnipe: (chId, s) => { state.snipes[chId] = s; },
+      recordEditSnipe: (chId, s) => { state.editSnipes[chId] = s; },
+    };
+  }
+
+  // snipe tracking
+  client.on(Events.MessageDelete, (msg) => {
+    if (msg.author?.bot || !msg.content) return;
+    state.snipes[msg.channel.id] = { author: msg.author.tag, content: msg.content.slice(0, 500) };
+  });
+  client.on(Events.MessageUpdate, (_old, msgNew) => {
+    if (msgNew.author?.bot || !msgNew.content) return;
+    state.editSnipes[msgNew.channel.id] = { author: msgNew.author.tag, content: msgNew.content.slice(0, 500) };
+  });
+
+  // welcome / goodbye
+  client.on(Events.GuildMemberAdd, async (member) => {
+    const cfg = state.guildConfig[member.guild.id];
+    if (cfg?.autoRole) {
+      const role = member.guild.roles.cache.get(cfg.autoRole);
+      if (role) await member.roles.add(role).catch(() => {});
+    }
+    const sys = member.guild.systemChannel ?? member.guild.publicUpdatesChannel;
+    if (sys && cfg?.welcome) {
+      await sys.send(cfg.welcome.replace("{user}", `<@${member.id}>`).slice(0, 500)).catch(() => {});
+    }
+  });
+  client.on(Events.GuildMemberRemove, async (member) => {
+    const cfg = state.guildConfig[member.guild.id];
+    const sys = member.guild.systemChannel;
+    if (sys && cfg?.goodbye) {
+      await sys.send(cfg.goodbye.replace("{user}", member.user.tag).slice(0, 500)).catch(() => {});
+    }
+  });
+
   client.on(Events.MessageCreate, async (msg) => {
     if (msg.author.bot) return;
     const isOwner = ownerIds.includes(msg.author.id);
     const mentioned = msg.mentions.users.has(client.user!.id);
     const isDm = !msg.guild;
-    if (!isDm && !mentioned) return;
-    const key = `dm:${msg.channelId}`;
-    const agent = getAgent(key, isOwner, `discord:${msg.author.username}${isOwner ? " (OWNER)" : ""}`);
-    agent.setConfirm(confirmViaReply(msg));
-    logAudit({ time: new Date().toISOString(), actor: `discord:${msg.author.id}`, action: "message", detail: msg.content.slice(0, 200) });
+    const prefix = guildPrefix(msg.guildId ?? "global");
 
-    // ---- text commands (!command) ----
-    const parsed = parseCommand(msg.content);
+    // ---- prefix commands: handled WITHOUT the AI agent ----
+    const parsed = parseCommand(msg.content, prefix);
     if (parsed) {
       const cmd = findCommand(parsed.name);
+      const ctx = buildContext(msg, isOwner, parsed.args, prefix);
       if (!cmd) {
         await msg.reply({
-          embeds: [new EmbedBuilder().setColor(0x99aab5).setTitle("Unknown Command").setDescription(`\`!${parsed.name}\` doesn't exist. Try \`!help\`.`).setTimestamp()],
+          embeds: [new EmbedBuilder().setColor(0x99aab5).setTitle("Unknown Command").setDescription(`\`${prefix}${parsed.name}\` doesn't exist. Try \`${prefix}help\`.`).setTimestamp()],
+          allowedMentions: { repliedUser: false },
+        });
+        return;
+      }
+      // real permission enforcement
+      if (cmd.perm && msg.member && !msg.member.permissions.has(cmd.perm) && !isOwner) {
+        await msg.reply({
+          embeds: [new EmbedBuilder().setColor(0xed4245).setTitle("Permission Denied").setDescription(`You don't have permission for \`${prefix}${cmd.name}\`.`).setTimestamp()],
           allowedMentions: { repliedUser: false },
         });
         return;
       }
       if (cmd.modOnly && !isModerator(msg, isOwner)) {
         await msg.reply({
-          embeds: [new EmbedBuilder().setColor(0xed4245).setTitle("Permission Denied").setDescription(`\`!${cmd.name}\` is for moderators only.`).setTimestamp()],
+          embeds: [new EmbedBuilder().setColor(0xed4245).setTitle("Permission Denied").setDescription(`\`${prefix}${cmd.name}\` is for moderators only.`).setTimestamp()],
           allowedMentions: { repliedUser: false },
         });
         return;
       }
+      logAudit({ time: new Date().toISOString(), actor: `discord:${msg.author.id}`, action: `command:${cmd.name}`, detail: msg.content.slice(0, 200) });
       try {
-        await cmd.run({ msg, isOwner, args: parsed.args });
+        await cmd.run(ctx);
+        scheduleSave();
       } catch (e) {
         await msg.reply({
           embeds: [new EmbedBuilder().setColor(0xed4245).setTitle("Command Error").setDescription(`\`${(e as Error).message}\``).setTimestamp()],
           allowedMentions: { repliedUser: false },
         });
       }
-      return;
+      return; // never forward prefix commands to the LLM
     }
 
-    // ---- AI agent reply, professionally embedded ----
+    // ---- AI agent reply (mention or DM), professionally embedded ----
+    if (!isDm && !mentioned) return;
+    const key = `dm:${msg.channelId}`;
+    const agent = getAgent(key, isOwner, `discord:${msg.author.username}${isOwner ? " (OWNER)" : ""}`);
+    agent.setConfirm(confirmViaReply(msg) as any);
+    logAudit({ time: new Date().toISOString(), actor: `discord:${msg.author.id}`, action: "message", detail: msg.content.slice(0, 200) });
     try {
       const reply = await agent.handle(msg.content.replace(/<@!?\d+>/g, "").trim());
       const embed = new EmbedBuilder()
@@ -142,10 +249,10 @@ export async function startDiscord(ownerIds: string[]) {
     } else if (/intents|disallowed/i.test(err)) {
       console.error(
         "\nDiscord rejected the connection because Privileged Intents are off.\n" +
-          "  Go to discord.com/developers > your app > Bot and enable:\n" +
+          "Go to discord.com/developers > your app > Bot and enable:\n" +
           "    - MESSAGE CONTENT INTENT\n" +
           "    - SERVER MEMBERS INTENT (optional but recommended)\n" +
-          "  Then restart the bot."
+          "Then restart the bot."
       );
     } else {
       console.error("Check your internet connection, then restart the bot.");
@@ -153,3 +260,5 @@ export async function startDiscord(ownerIds: string[]) {
     process.exit(1);
   }
 }
+
+export { playRobotBanner };
