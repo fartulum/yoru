@@ -31,13 +31,13 @@ export interface Tool {
 
 /* ---------------- safety helpers ---------------- */
 
-const DESTRUCTIVE = /\b(rm\s+-[rf]|mkfs|dd\s+if=|:\(\)\{|shutdown|reboot|del\s+\/[fs]|format\s+[a-z]:|cipher\s+\/w|>\/dev\/sd|chmod\s+-R\s+777\s+\/|mv\s+\/|killall|kill\s+-9\s+1)\b/i;
+const DESTRUCTIVE = /\b(rm\s+-[rf]|mkfs|dd\s+if=|:\(\)\{|\bshutdown|reboot|del\s+\/[fs]|format\s+[a-z]:|>\/dev\/sd|chmod\s+-R\s+777\s+\/|mv\s+\/|killall|kill\s+-9\s+1)\b/i;
 
-function isWindows(): boolean {
+export function isWindows(): boolean {
   return process.platform === "win32";
 }
 
-function homeRelative(p: string): string {
+export function homeRelative(p: string): string {
   const h = process.env.HOME ?? process.env.USERPROFILE ?? ".";
   return p.startsWith("~/") ? join(h, p.slice(2)) : p;
 }
@@ -173,7 +173,7 @@ const remember: Tool = {
   },
 };
 
-/* ------------ file index ("where is X") ------------ */
+/* ---------------- file index ("where is X") ---------------- */
 
 const INDEX_FILE = join(DATA_DIR, "file-index.json");
 
@@ -237,7 +237,7 @@ const fileIndex: Tool = {
   },
 };
 
-/* ------------ scoped lockdown (vault encryption) ------------ */
+/* ---------------- scoped lockdown (vault encryption) ---------------- */
 
 const VAULT_DEFAULT = "~/vault";
 const KEY_FILE = join(DATA_DIR, "vault.key"); // owner copies this somewhere safe after each lockdown
@@ -274,7 +274,7 @@ const lockdown: Tool = {
       return `REFUSED: lockdown only operates inside ${allowedRoot}. Full-disk encryption should be done once with LUKS (Linux) or BitLocker (Windows) — ask me for the commands.`;
     }
     if (!existsSync(vault)) return `Vault directory ${vault} does not exist. Create it and move files in first.`;
-    const ok = await ctx.confirm(`⚠️ Lockdown: encrypt ALL files in ${vault}? You will get one recovery key.`);
+    const ok = await ctx.confirm(`🔒 Lockdown: encrypt ALL files in ${vault}? You will get one recovery key.`);
     if (!ok) return "Cancelled.";
     const key = randomBytes(32);
     writeFileSync(KEY_FILE, key.toString("base64"), { mode: 0o600 });
@@ -342,7 +342,7 @@ const unlock: Tool = {
   },
 };
 
-/* ------------ owner-only lookup index (PDF/CSV) ------------ */
+/* ---------------- owner-only lookup index (PDF/CSV) ---------------- */
 
 const LOOKUP_DIR = () => process.env.LOOKUP_DIR ?? "data/lookups";
 const LOOKUP_INDEX = join(DATA_DIR, "lookup-index.json");

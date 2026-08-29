@@ -29,8 +29,8 @@ export function startWatchdog(agent: Agent) {
   const run = async () => {
     try {
       const report = await agent.handle(patrolPrompt(tick++));
-      if (!/no anomaly|nothing unusual|all clear|no anomalies/i.test(report)) {
-        await agent.notify(`🚨 [watchdog] ${report}`);
+      if (!/no anomal|nothing usual|all clear|no anomalies/i.test(report)) {
+        await agent.notify(`⚠️ [watchdog] ${report}`);
       }
     } catch (e) {
       console.error(`[watchdog] patrol failed: ${(e as Error).message}`);
