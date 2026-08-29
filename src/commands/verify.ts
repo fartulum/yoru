@@ -58,10 +58,11 @@ export const verifyCommands: BotCommand[] = [
     async run(ctx) {
       const gate = requirePerm(ctx.msg, PermissionFlagsBits.Administrator);
       if (gate) return void (await fail(ctx.msg, "Permission Denied", gate));
-      const on = (ctx.args[0] ?? "").toLowerCase() === "on";
-      if (!["on", "off"].includes((ctx.args[0] ?? "").toLowerCase())) {
+      const arg = (ctx.args[0] ?? "").toLowerCase();
+      if (!["on", "off"].includes(arg)) {
         return void (await fail(ctx.msg, "Usage", "`!toggleverify <on|off>`"));
       }
+      const on = arg === "on";
       ctx.setVerifyEnabled(on);
       await ok(ctx.msg, "admin", "Verification " + (on ? "Enabled" : "Disabled"), on ? "Members can now use `!verify`." : "Verification is off.");
     },
@@ -88,7 +89,7 @@ export const verifyCommands: BotCommand[] = [
     usage: "!verifyconfig",
     perm: PermissionFlagsBits.Administrator,
     async run(ctx) {
-      const gate = requirePerm(ctx.msg, PermissionFlagsBitsBitsSafe(ctx));
+      const gate = requirePerm(ctx.msg, PermissionFlagsBits.Administrator);
       if (gate) return void (await fail(ctx.msg, "Permission Denied", gate));
       const cfg = ctx.verifyConfig(ctx.msg.guildId!);
       const e = base("admin", "Verification Config");
