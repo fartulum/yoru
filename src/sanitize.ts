@@ -17,7 +17,7 @@ export function sanitizeReply(reply: string): string {
   let out = reply.trim();
 
   // Remove a code fence wrapping the entire reply (with optional language tag).
-  const fence = /^```[\w-]*\n([\s\S]*?)\n```$/m.exec(out);
+  const fence = /^```[\w-]*\n([\s\S]*?)\n```$/.exec(out);
   if (fence) out = fence[1].trim();
 
   // Drop any line that quotes the agent's own instructions or config.

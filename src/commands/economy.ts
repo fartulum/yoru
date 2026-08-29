@@ -1,4 +1,4 @@
-import { base, ok, fail, fmtCoins, rollDice, pick, clampInt, timeLeft } from "./shared.js";
+import { base, ok, fail, fmtCoins, rollDice, pick, clampInt, timeLeft, ch } from "./shared.js";
 import type { BotCommand } from "./types.js";
 
 const JOBS = [
@@ -18,8 +18,8 @@ export const economyCommands: BotCommand[] = [
   { name: "daily", category: "economy", description: "Claim your daily reward", usage: "!daily", async run(ctx) {
     const acc = ctx.eco(ctx.msg.author.id);
     const now = Date.now();
-    if (now - acc.lastDaily < 86_400_000) {
-      return void (await fail(ctx.msg, "Daily Claimed", `Already claimed. Come back in **${timeLeft(86_400_000 - (now - acc.lastDaily))}**.`));
+    if (acc.lastDaily && now - acc.lastDaily < 86_400_000) {
+      return void (await fail(ctx.msg, "Daily Claimed", `Already claimed. Come back in **${timeLeft(86_400_000 - (now - acc.lastDaily!))}**.`));
     }
     acc.lastDaily = now;
     acc.balance += 250;

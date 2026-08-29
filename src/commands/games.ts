@@ -1,4 +1,4 @@
-import { base, ok, fail, rollDice, pick, clampInt, fmtCoins } from "./shared.js";
+import { base, ok, fail, rollDice, pick, clampInt, fmtCoins, ch } from "./shared.js";
 import type { BotCommand } from "./types.js";
 
 const TRIVIA: { q: string; a: string[] }[] = [
@@ -28,16 +28,16 @@ export const gameCommands: BotCommand[] = [
     const t = TRIVIA[Math.floor(Math.random() * TRIVIA.length)];
     await ctx.msg.reply({ embeds: [base("games", "Trivia", `${t.q}\nYou have **30 seconds**.`)], allowedMentions: { repliedUser: false } });
     try {
-      const collected = await ctx.msg.channel.awaitMessages({
+      const collected = await ch(ctx.msg).awaitMessages({
         filter: (m) => m.author.id === ctx.msg.author.id && t.a.includes(m.content.trim().toLowerCase()),
         max: 1, time: 30_000, errors: ["time"],
       });
       const acc = ctx.eco(ctx.msg.author.id);
       acc.balance += 100;
       ctx.saveEco();
-      await ctx.msg.channel.send({ embeds: [base("games", "Correct!", `Well done, <@${ctx.msg.author.id}>! +${fmtCoins(100)}`)] });
+      await ch(ctx.msg).send({ embeds: [base("games", "Correct!", `Well done, <@${ctx.msg.author.id}>! +${fmtCoins(100)}`)] });
     } catch {
-      await ctx.msg.channel.send({ embeds: [base("games", "Time's Up!", `The answer was **${t.a[0]}**.`)] });
+      await ch(ctx.msg).send({ embeds: [base("games", "Time's Up!", `The answer was **${t.a[0]}**.`)] });
     }
   } },
   { name: "duel", category: "games", description: "Coin duel against the bot (50/50)", usage: "!duel <amount>", async run(ctx) {
@@ -60,7 +60,7 @@ export const gameCommands: BotCommand[] = [
     await ctx.msg.reply({ embeds: [base("games", "Number Guess", "I picked a number between 1 and 100. You have **3 tries** — reply with your guesses!")], allowedMentions: { repliedUser: false } });
     for (let i = 0; i < 3; i++) {
       try {
-        const collected = await ctx.msg.channel.awaitMessages({
+        const collected = await ch(ctx.msg).awaitMessages({
           filter: (m) => m.author.id === ctx.msg.author.id && /^\d+$/.test(m.content.trim()),
           max: 1, time: 30_000, errors: ["time"],
         });
@@ -69,16 +69,16 @@ export const gameCommands: BotCommand[] = [
           const acc = ctx.eco(ctx.msg.author.id);
           acc.balance += 100;
           ctx.saveEco();
-          await ctx.msg.channel.send({ embeds: [base("games", "You Got It!", `**${secret}** was right! +${fmtCoins(100)}`)] });
+          await ch(ctx.msg).send({ embeds: [base("games", "You Got It!", `**${secret}** was right! +${fmtCoins(100)}`)] });
           return;
         }
-        await ctx.msg.channel.send({ embeds: [base("games", "Wrong", g < secret ? "Higher!" : "Lower!")] });
+        await ch(ctx.msg).send({ embeds: [base("games", "Wrong", g < secret ? "Higher!" : "Lower!")] });
       } catch {
-        await ctx.msg.channel.send({ embeds: [base("games", "Time's Up!", `The number was **${secret}**.`)] });
+        await ch(ctx.msg).send({ embeds: [base("games", "Time's Up!", `The number was **${secret}**.`)] });
         return;
       }
     }
-    await ctx.msg.channel.send({ embeds: [base("games", "Out of Tries", `The number was **${secret}**.`)] });
+    await ch(ctx.msg).send({ embeds: [base("games", "Out of Tries", `The number was **${secret}**.`)] });
   } },
   { name: "rpsls", category: "games", description: "Rock paper scissors lizard spock", usage: "!rpsls <move>", async run(ctx) {
     const mine = ctx.args[0]?.toLowerCase() as (typeof RPSLS)[number];
@@ -95,20 +95,20 @@ export const gameCommands: BotCommand[] = [
     await ctx.msg.reply({ embeds: [base("games", "Hangman", `\`${shown.join(" ")}\` (${word.length} letters)\nGuess letters one at a time — 6 wrong guesses ends it.`)], allowedMentions: { repliedUser: false } });
     while (wrong < 6 && shown.includes("_")) {
       try {
-        const collected = await ctx.msg.channel.awaitMessages({
+        const collected = await ch(ctx.msg).awaitMessages({
           filter: (m) => m.author.id === ctx.msg.author.id && /^[a-z]$/i.test(m.content.trim()),
           max: 1, time: 60_000, errors: ["time"],
         });
         const letter = collected.first()!.content.trim().toLowerCase();
         if (word.includes(letter)) {
           [...word].forEach((ch, i) => { if (ch === letter) shown[i] = letter; });
-          await ctx.msg.channel.send({ embeds: [base("games", "Hangman", `\`${shown.join(" ")}\``)] });
+          await ch(ctx.msg).send({ embeds: [base("games", "Hangman", `\`${shown.join(" ")}\``)] });
         } else {
           wrong++;
-          await ctx.msg.channel.send({ embeds: [base("games", "Hangman", `❌ **${letter}** isn't in the word. ${6 - wrong} lives left.`)] });
+          await ch(ctx.msg).send({ embeds: [base("games", "Hangman", `❌ **${letter}** isn't in the word. ${6 - wrong} lives left.`)] });
         }
       } catch {
-        await ctx.msg.channel.send({ embeds: [base("games", "Hangman", `Time's up! The word was **${word}**.`)] });
+        await ch(ctx.msg).send({ embeds: [base("games", "Hangman", `Time's up! The word was **${word}**.`)] });
         return;
       }
     }
@@ -116,9 +116,9 @@ export const gameCommands: BotCommand[] = [
       const acc = ctx.eco(ctx.msg.author.id);
       acc.balance += 150;
       ctx.saveEco();
-      await ctx.msg.channel.send({ embeds: [base("games", "You Win!", `The word was **${word}**! +${fmtCoins(150)}`)] });
+      await ch(ctx.msg).send({ embeds: [base("games", "You Win!", `The word was **${word}**! +${fmtCoins(150)}`)] });
     } else {
-      await ctx.msg.channel.send({ embeds: [base("games", "Game Over", `The word was **${word}**.`)] });
+      await ch(ctx.msg).send({ embeds: [base("games", "Game Over", `The word was **${word}**.`)] });
     }
   } },
   { name: "tictactoe", category: "games", description: "Play tic-tac-toe against the bot", usage: "!tictactoe", async run(ctx) {
@@ -130,32 +130,32 @@ export const gameCommands: BotCommand[] = [
     for (let turn = 0; turn < 9; turn++) {
       if (turn % 2 === 0) {
         try {
-          const collected = await ctx.msg.channel.awaitMessages({
+          const collected = await ch(ctx.msg).awaitMessages({
             filter: (m) => m.author.id === ctx.msg.author.id && /^[1-9]$/.test(m.content.trim()) && board[parseInt(m.content.trim(), 10) - 1] === "⬜",
             max: 1, time: 60_000, errors: ["time"],
           });
           board[parseInt(collected.first()!.content.trim(), 10) - 1] = "❌";
         } catch {
-          await ctx.msg.channel.send({ embeds: [base("games", "Tic-Tac-Toe", "Time's up! Game over.")] });
+          await ch(ctx.msg).send({ embeds: [base("games", "Tic-Tac-Toe", "Time's up! Game over.")] });
           return;
         }
         if (winner("❌")) {
           const acc = ctx.eco(ctx.msg.author.id);
           acc.balance += 200;
           ctx.saveEco();
-          await ctx.msg.channel.send({ embeds: [base("games", "You Win!", `${render()}\nNice! +${fmtCoins(200)}`)] });
+          await ch(ctx.msg).send({ embeds: [base("games", "You Win!", `${render()}\nNice! +${fmtCoins(200)}`)] });
           return;
         }
       } else {
         const free = board.map((c, i) => (c === "⬜" ? i : -1)).filter((i) => i >= 0);
         board[pick(free)] = "⭕";
         if (winner("⭕")) {
-          await ctx.msg.channel.send({ embeds: [base("games", "I Win!", `${render()}\nBetter luck next time.`)] });
+          await ch(ctx.msg).send({ embeds: [base("games", "I Win!", `${render()}\nBetter luck next time.`)] });
           return;
         }
       }
     }
-    await ctx.msg.channel.send({ embeds: [base("games", "Tic-Tac-Toe", `${render()}\nIt's a draw!`)] });
+    await ch(ctx.msg).send({ embeds: [base("games", "Tic-Tac-Toe", `${render()}\nIt's a draw!`)] });
   } },
   { name: "blackjack", category: "games", description: "Simple blackjack vs the bot", usage: "!blackjack <bet>", async run(ctx) {
     const bet = parseInt(ctx.args[0] ?? "", 10);
@@ -191,16 +191,16 @@ export const gameCommands: BotCommand[] = [
     const scrambled = [...word].sort(() => Math.random() - 0.5).join("");
     await ctx.msg.reply({ embeds: [base("games", "Word Guess", `Unscramble: **${scrambled}**\n30 seconds.`)], allowedMentions: { repliedUser: false } });
     try {
-      await ctx.msg.channel.awaitMessages({
+      await ch(ctx.msg).awaitMessages({
         filter: (m) => m.author.id === ctx.msg.author.id && m.content.trim().toLowerCase() === word,
         max: 1, time: 30_000, errors: ["time"],
       });
       const acc = ctx.eco(ctx.msg.author.id);
       acc.balance += 120;
       ctx.saveEco();
-      await ctx.msg.channel.send({ embeds: [base("games", "Correct!", `The word was **${word}**! +${fmtCoins(120)}`)] });
+      await ch(ctx.msg).send({ embeds: [base("games", "Correct!", `The word was **${word}**! +${fmtCoins(120)}`)] });
     } catch {
-      await ctx.msg.channel.send({ embeds: [base("games", "Time's Up!", `The word was **${word}**.`)] });
+      await ch(ctx.msg).send({ embeds: [base("games", "Time's Up!", `The word was **${word}**.`)] });
     }
   } },
   { name: "math", category: "games", description: "Solve a math problem (20s)", usage: "!math", async run(ctx) {
@@ -209,16 +209,16 @@ export const gameCommands: BotCommand[] = [
     const [op, ans] = pick([...ops]);
     await ctx.msg.reply({ embeds: [base("games", "Quick Math", `What is **${a} ${op} ${b}**?\n20 seconds.`)], allowedMentions: { repliedUser: false } });
     try {
-      await ctx.msg.channel.awaitMessages({
+      await ch(ctx.msg).awaitMessages({
         filter: (m) => m.author.id === ctx.msg.author.id && parseInt(m.content.trim(), 10) === ans,
         max: 1, time: 20_000, errors: ["time"],
       });
       const acc = ctx.eco(ctx.msg.author.id);
       acc.balance += 80;
       ctx.saveEco();
-      await ctx.msg.channel.send({ embeds: [base("games", "Correct!", `The answer was **${ans}**! +${fmtCoins(80)}`)] });
+      await ch(ctx.msg).send({ embeds: [base("games", "Correct!", `The answer was **${ans}**! +${fmtCoins(80)}`)] });
     } catch {
-      await ctx.msg.channel.send({ embeds: [base("games", "Time's Up!", `The answer was **${ans}**.`)] });
+      await ch(ctx.msg).send({ embeds: [base("games", "Time's Up!", `The answer was **${ans}**.`)] });
     }
   } },
   { name: "typing", category: "games", description: "Type the phrase fast (15s)", usage: "!typing", async run(ctx) {
@@ -226,7 +226,7 @@ export const gameCommands: BotCommand[] = [
     await ctx.msg.reply({ embeds: [base("games", "Typing Test", `Type this exactly:\n> ${phrase}\n15 seconds.`)], allowedMentions: { repliedUser: false } });
     const start = Date.now();
     try {
-      await ctx.msg.channel.awaitMessages({
+      await ch(ctx.msg).awaitMessages({
         filter: (m) => m.author.id === ctx.msg.author.id && m.content.trim().toLowerCase() === phrase,
         max: 1, time: 15_000, errors: ["time"],
       });
@@ -234,13 +234,13 @@ export const gameCommands: BotCommand[] = [
       const acc = ctx.eco(ctx.msg.author.id);
       acc.balance += 60;
       ctx.saveEco();
-      await ctx.msg.channel.send({ embeds: [base("games", "Fast!", `Done in **${secs.toFixed(1)}s**! +${fmtCoins(60)}`)] });
+      await ch(ctx.msg).send({ embeds: [base("games", "Fast!", `Done in **${secs.toFixed(1)}s**! +${fmtCoins(60)}`)] });
     } catch {
-      await ctx.msg.channel.send({ embeds: [base("games", "Too Slow!", "Better luck next time.")] });
+      await ch(ctx.msg).send({ embeds: [base("games", "Too Slow!", "Better luck next time.")] });
     }
   } },
   { name: "reactiontest", category: "games", description: "React fast to a message", usage: "!reactiontest", async run(ctx) {
-    const m = await ctx.msg.channel.send({ embeds: [base("games", "Reaction Test", "React with ⚡ as fast as you can!")] });
+    const m = await ch(ctx.msg).send({ embeds: [base("games", "Reaction Test", "React with ⚡ as fast as you can!")] });
     await m.react("⚡");
     const start = Date.now();
     try {
@@ -249,9 +249,9 @@ export const gameCommands: BotCommand[] = [
       const acc = ctx.eco(ctx.msg.author.id);
       acc.balance += 50;
       ctx.saveEco();
-      await ctx.msg.channel.send({ embeds: [base("games", "Reaction Test", `**${secs.toFixed(2)}s** — +${fmtCoins(50)}`)] });
+      await ch(ctx.msg).send({ embeds: [base("games", "Reaction Test", `**${secs.toFixed(2)}s** — +${fmtCoins(50)}`)] });
     } catch {
-      await ctx.msg.channel.send({ embeds: [base("games", "Too Slow!", "No reaction detected.")] });
+      await ch(ctx.msg).send({ embeds: [base("games", "Too Slow!", "No reaction detected.")] });
     }
   } },
   { name: "coinflipduel", category: "games", description: "Best of 3 coin flips", usage: "!coinflipduel", async run(ctx) {

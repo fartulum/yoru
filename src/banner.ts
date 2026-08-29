@@ -78,7 +78,7 @@ function colorize(frame: string): string {
     .map((line) => {
       if (line.includes("Y O R U")) return bold(magenta(line));
       if (line.includes("┌")) return cyan(line);
-      if (/(\s*_+?\s*\)|\(o\/o\)|\(◕‿◕\)|\(¬‿¬\)|\( ^ \))/) return green(line);
+      if (/\(\s*_+?\s*\)|\(o\/o\)|\( \^ \)/.test(line)) return green(line);
       return yellow(line);
     })
     .join("\n");

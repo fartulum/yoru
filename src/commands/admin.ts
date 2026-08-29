@@ -1,5 +1,5 @@
 import { PermissionFlagsBits } from "discord.js";
-import { base, ok, fail, requirePerm, clampInt, pick } from "./shared.js";
+import { base, ok, fail, requirePerm, clampInt, pick, ch } from "./shared.js";
 import type { BotCommand } from "./types.js";
 
 export const adminCommands: BotCommand[] = [
@@ -126,7 +126,7 @@ export const adminCommands: BotCommand[] = [
       if (gate) return void (await fail(ctx.msg, "Permission Denied", gate));
       const text = ctx.args.join(" ");
       if (!text) return void (await fail(ctx.msg, "Usage", "`!say <message>`"));
-      await ctx.msg.channel.send({ content: text });
+      await ch(ctx.msg).send({ content: text });
       await ctx.msg.delete().catch(() => {});
     },
   },
@@ -141,7 +141,7 @@ export const adminCommands: BotCommand[] = [
       if (gate) return void (await fail(ctx.msg, "Permission Denied", gate));
       const text = ctx.args.join(" ");
       if (!text) return void (await fail(ctx.msg, "Usage", "`!embed <message>`"));
-      await ctx.msg.channel.send({ embeds: [base("admin", "Message", text)] });
+      await ch(ctx.msg).send({ embeds: [base("admin", "Message", text)] });
       await ctx.msg.delete().catch(() => {});
     },
   },
