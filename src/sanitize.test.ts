@@ -25,4 +25,14 @@ describe("sanitizeReply", () => {
     const raw = "Try this command:\n```\nls -la\n```\nIt lists everything.";
     expect(sanitizeReply(raw)).toBe(raw);
   });
+
+  it("keeps a fenced block when text follows the closing fence on the same line", () => {
+    const raw = "Run this:\n```\nls -la\n``` then report back.";
+    expect(sanitizeReply(raw)).toBe(raw);
+  });
+
+  it("does not strip a fenced block when the reply has leading text before the opening fence", () => {
+    const raw = "First, do this:\n```bash\napt update\n```\nThen continue.";
+    expect(sanitizeReply(raw)).toBe(raw);
+  });
 });
