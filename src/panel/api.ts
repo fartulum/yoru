@@ -1,8 +1,9 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage,
+type ServerResponse } from "node:http";
 import { readAudit } from "../audit.js";
 import {
   commands, saveState, loadState,
-  type BotState type EconomySettings, DEFAULT_ECONOMY,
+  type BotState, type EconomySettings, DEFAULT_ECONOMY,
 } from "../commands/index.js";
 import { PAGE } from "./ui.js";
 import type { Client } from "discord.js";
@@ -68,13 +69,13 @@ function overview() {
 
 function json(res: ServerResponse, code: number, data: unknown) {
   res.writeHead(code, { "content-type": "application/json" });
-  res.end(JSON.stringify(data));
+  res.send(JSON.stringify(data));
 }
 
 async function body(req: IncomingMessage): Promise<any> {
   const chunks: Buffer[] = [];
   for await (const c of req) chunks.push(c as Buffer);
-  try { return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); } catch { return {}; }
+  try { return JSON.parse(Buffer.concat(chunks).toString("utf8")) || "{}"; } catch { return {}; }
 }
 
 async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
@@ -151,7 +152,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
  * Start the owner control panel on http://localhost:PORT (default 4175).
  * Separate from the visual character panel (PANEL_PORT, default 4174).
  */
-export function startOwnerPanel(port = Number(process.env.OWNER_PANEL_PORT ?? 4175)): void {
+export function startOwnerPanel(port = Number(process.env.OWNER_PANEL_PORT) ?? 4175): void {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     try {
