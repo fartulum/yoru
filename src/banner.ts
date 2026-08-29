@@ -9,56 +9,56 @@
 
 export const ROBOT_FRAMES = [
   String.raw`
-   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-    [ Y O R U ]
-   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-       \ (^_^) /
-       |  ___  |
-      /| |   | |\
-      d | ___ | b
-      |  U U  |
-     /|       |\
-     d |  ___  | b
-      |_|   |_|
+  ┌─────────────────┐
+   [ Y O R U ]
+  ┌─────────────────┐
+      \ (^_^) /
+      |  ___  |
+     /| |   | |\
+     d | ___ | b
+     |  U U  |
+    /|       |\
+    d |  ___  | b
+     |_|   |_|
 `,
   String.raw`
-   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-    [ Y O R U ]
-   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-       \ (⌐■_■) /
-       |  ___  |
-      /| |   | |\
-      d | ___ | b
-      |  U U  |
-     /|       |\
-     d |  ___  | b
-      |_|   |_|
+  ┌─────────────────┐
+   [ Y O R U ]
+  ┌─────────────────┐
+      \ (◕‿◕) /
+      |  ___  |
+     /| |   | |\
+     d | ___ | b
+     |  U U  |
+    /|       |\
+    d |  ___  | b
+     |_|   |_|
 `,
   String.raw`
-   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-    [ Y O R U ]
-   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-       \ (¬‿¬) /
-       |  ___  |
-      /| |   | |\
-      d | ___ | b
-      |  U U  |
-     /|       |\
-     d |  ___  | b
-      |_|   |_|
+  ┌─────────────────┐
+   [ Y O R U ]
+  ┌─────────────────┐
+      \ (¬‿¬) /
+      |  ___  |
+     /| |   | |\
+     d | ___ | b
+     |  U U  |
+    /|       |\
+    d |  ___  | b
+     |_|   |_|
 `,
   String.raw`
-   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-    [ Y O R U ]
-   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-       \ (^‿^) /
-       |  ___  |
-      /| |   | |\
-      d | ___ | b
-      |  U U  |
-     /|       |\
-     d |  ___  | b
-      |_|   |_|
+  ┌─────────────────┐
+   [ Y O R U ]
+  ┌─────────────────┐
+      \ ( ^ ) /
+      |  ___  |
+     /| |   | |\
+     d | ___ | b
+     |  U U  |
+    /|       |\
+    d |  ___  | b
+     |_|   |_|
 `,
 ];
 
@@ -77,8 +77,8 @@ function colorize(frame: string): string {
     .split("\n")
     .map((line) => {
       if (line.includes("Y O R U")) return bold(magenta(line));
-      if (line.includes("⠀")) return cyan(line);
-      if (/(\s*_+?\s*\)|\(o\/o\)|\(⌐■_■\)|\(¬‿¬\)|\(^‿^\))/) return green(line);
+      if (line.includes("┌")) return cyan(line);
+      if (/(\s*_+?\s*\)|\(o\/o\)|\(◕‿◕\)|\(¬‿¬\)|\( ^ \))/) return green(line);
       return yellow(line);
     })
     .join("\n");
@@ -98,14 +98,21 @@ export function playRobotBanner(
   const frames = colored ? ROBOT_FRAMES.map(colorize) : ROBOT_FRAMES;
   const FRAME_MS = 150;
 
+  // Number of terminal lines one frame occupies (leading newline included).
+  const frameLines = frames[0].split("\n").length;
+
+  // Redraw ONLY the banner's own lines: move the cursor back up to the top
+  // of the frame and clear each line. Never clear the whole screen, so any
+  // text printed after the banner (startup logs, subtitles) stays visible.
   const draw = (i: number) => {
     const frame = frames[i % frames.length];
-    process.stdout.write("\x1b[2J\x1b[H" + frame + "\n");
+    process.stdout.write(`\x1b[${frameLines}F` + "\x1b[2K".repeat(frameLines) + frame + "\n");
   };
 
   if (loop) {
-    let i = 0;
-    draw(i);
+    // Print the first frame normally, then redraw in place forever.
+    process.stdout.write(frames[0] + "\n");
+    let i = 1;
     const timer = setInterval(() => {
       i++;
       draw(i);
