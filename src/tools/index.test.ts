@@ -14,9 +14,21 @@ test("homeRelative expands ~/ against the home directory", () => {
   assert.equal(homeRelative("~/vault"), expected);
 });
 
+test("homeRelative expands a bare ~ to the home directory", () => {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? ".";
+  assert.equal(homeRelative("~"), home);
+});
+
 test("homeRelative leaves absolute and relative paths untouched", () => {
   assert.equal(homeRelative("/etc/passwd"), "/etc/passwd");
   assert.equal(homeRelative("data/memory.md"), "data/memory.md");
+});
+
+test("homeRelative does not treat ~-prefixed names as home paths", () => {
+  // Regression: "~notes" used to be expanded to <home>/notes, silently
+  // reading/writing the wrong file.
+  assert.equal(homeRelative("~notes"), "~notes");
+  assert.equal(homeRelative("~backup.txt"), "~backup.txt");
 });
 
 test("package.json version is valid semver (banner source of truth)", () => {
