@@ -2,7 +2,7 @@ import { createInterface } from "node:readline";
 import { loadEnvFile } from "./llm.js";
 import { Agent } from "./agent.js";
 import { startWatchdog } from "./watchdog.js";
-import { startPanel, setPanelStat } from "./panel.js";
+import { startPanel, setPanelState } from "./panel.js";
 import { logAudit } from "./audit.js";
 
 loadEnvFile();
@@ -43,7 +43,7 @@ async function main() {
     });
   const agent = new Agent({ owner: true, sender: "terminal", confirm, say: async (t) => console.log(t) });
   logAudit({ time: new Date().toISOString(), actor: "terminal", action: "session_start" });
-  setPanelStat({ name, status: "idle", activity: "Terminal session started" });
+  setPanelState({ name, status: "idle", activity: "Terminal session started" });
   console.log(
     `${bold(cyan(`${name} (yoru-lite v0.4)`))} ${dim("—")} backend: ${magenta(process.env.LLM_BACKEND ?? "ollama")}, model: ${magenta(process.env.OLLAMA_MODEL ?? "llama3.2:3b")}\n` +
     `${dim(`Visual panel: http://localhost:${process.env.PANEL_PORT ?? 4173}`)}\n` +
