@@ -33,6 +33,15 @@ function env(k: string, d = ""): string {
   return process.env[k] ?? d;
 }
 
+/** Keep the prompt small: cap how many recent messages are sent to the LLM. */
+export const HISTORY_LIMIT = Math.max(2, Number(env("HISTORY_LIMIT", "12")) || 12);
+
+/** Trim history to the most recent HISTORY_LIMIT messages (system messages are never trimmed here). */
+export function trimHistory(messages: ChatMessage[]): ChatMessage[] {
+  if (messages.length <= HISTORY_LIMIT) return messages;
+  return messages.slice(-HISTORY_LIMIT);
+}
+
 /** Local Ollama backend (default). */
 class OllamaClient implements LLMClient {
   async chat(messages: ChatMessage[], tools: ToolDef[]) {
@@ -44,6 +53,12 @@ class OllamaClient implements LLMClient {
         messages,
         tools: tools.length ? tools : undefined,
         stream: false,
+        // Speed: cap the reply length so the model stops instead of rambling.
+        options: {
+          num_predict: Number(env("OLLAMA_NUM_PREDICT", "512")) || 512,
+          // Speed: keep the model loaded between messages (avoids reload latency).
+          keep_alive: env("OLLAMA_KEEP_ALIVE", "30m"),
+        },
       }),
     });
     if (!res.ok) throw new Error(`Ollama error ${res.status}: ${await res.text()}`);
@@ -81,18 +96,18 @@ class OpenAICompatClient implements LLMClient {
   }
 }
 
-export function loadEnvFile(path = ".env") {
-  if (!existsSync(path)) return;
-  for (const line of readFileSync(path, "utf8").split("\n")) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    if (m && process.env[m[1]] === undefined) {
-      process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-    }
-  }
-}
-
 export function makeLLM(): LLMClient {
   return env("LLM_BACKEND", "ollama") === "openai"
     ? new OpenAICompatClient()
     : new OllamaClient();
+}
+
+export function loadEnvFile(path = ".env") {
+  if (!existsSync(path)) return;
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    const m = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*)\s*$/);
+    if (m && process.env[m[1]] === undefined) {
+      process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+    }
+  }
 }
