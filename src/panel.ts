@@ -72,8 +72,8 @@ const PAGE = `<!doctype html>
       document.getElementById('activity').textContent = s.activity;
       const a = await (await fetch('/audit')).json();
       document.getElementById('log').innerHTML = a.slice(-14).reverse().map(e =>
-        `<div><b>${esc(e.time.slice(11,19))}</b> ${esc(e.actor)} — ${esc(e.action)}` +
-        (e.allowed===false?` <span class="no">BLOCKED</span>`:'')+`</div>`).join('') || '<div>no activity yet</div>';
+        '<div><b>'+esc(e.time.slice(11,19))+'</b> '+esc(e.actor)+' — '+esc(e.action)+
+        (e.allowed===false?' <span class="no">BLOCKED</span>':'')+'</div>').join('') || '<div>no activity yet</div>';
     } catch {}
   }
   tick(); setInterval(tick, 2000);
@@ -96,7 +96,7 @@ export function startPanel(port = Number(process.env.PANEL_PORT ?? 4174)): void 
       res.end(JSON.stringify(readAudit(50)));
     } else {
       res.writeHead(200, { "content-type": "text/html" });
-      res.send(PAGE);
+      res.end(PAGE);
     }
   });
 

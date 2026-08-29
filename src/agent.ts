@@ -17,6 +17,8 @@ export interface AgentOptions {
   confirm?: (question: string) => Promise<boolean>;
   /** send a message to this interface (used for async watchdog alerts) */
   say?: (text: string) => Promise<void>;
+  /** extra system-prompt content injected by the caller (e.g. per-guild command catalog) */
+  extraSystem?: string;
 }
 
 export class Agent {
@@ -30,7 +32,7 @@ export class Agent {
       owner: opts.owner,
       sender: opts.sender,
       confirm: opts.confirm ?? (async () => opts.owner),
-      say: opts.say ?? ((t) => console.log(t)),
+      say: opts.say ?? (async (t: string) => { console.log(t); }),
     };
     const persona = existsSync(PERSONA_PATH)
       ? rf(PERSONA_PATH, "utf8")
@@ -46,6 +48,7 @@ export class Agent {
         instructions +
         commandCatalogPrompt() +
         (memory ? `\n# Long-term memory\n${memory}` : "") +
+        (opts.extraSystem ?? "") +
         `\nCurrent speaker: ${opts.sender}${opts.owner ? " (OWNER — full tool access)" : " (guest — restricted: no shell, no lookups, no file writes)"}`,
     });
   }

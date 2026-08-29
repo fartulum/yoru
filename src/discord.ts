@@ -139,7 +139,7 @@ export async function startDiscord(ownerIds: string[]) {
   // snipe tracking
   client.on(Events.MessageDelete, (msg) => {
     if (msg.author?.bot || !msg.content) return;
-    state.snipes[msg.channel.id] = { author: msg.author.tag, content: msg.content.slice(0, 500) };
+    state.snipes[msg.channel.id] = { author: msg.author!.tag, content: msg.content.slice(0, 500) };
   });
   client.on(Events.MessageUpdate, (_old, msgNew) => {
     if (msgNew.author?.bot || !msgNew.content) return;
@@ -249,10 +249,10 @@ export async function startDiscord(ownerIds: string[]) {
     } else if (/intents|disallowed/i.test(err)) {
       console.error(
         "\nDiscord rejected the connection because Privileged Intents are off.\n" +
-          "Go to discord.com/developers > your app > Bot and enable:\n" +
-          "    - MESSAGE CONTENT INTENT\n" +
-          "    - SERVER MEMBERS INTENT (optional but recommended)\n" +
-          "Then restart the bot."
+        "Go to discord.com/developers > your app > Bot and enable:\n" +
+        "    - MESSAGE CONTENT INTENT\n" +
+        "    - SERVER MEMBERS INTENT (optional but recommended)\n" +
+        "Then restart the bot."
       );
     } else {
       console.error("Check your internet connection, then restart the bot.");
