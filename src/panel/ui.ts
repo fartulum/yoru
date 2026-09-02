@@ -1,6 +1,6 @@
 /** Single-page owner dashboard served by the panel API. Pure glass, animated, zero deps. */
 export const PAGE = `<!doctype html>
-<html><head><meta charset="utf-8"><title>yoru — owner panel</title>
+<html><head><meta charset="utf-8"><title>yoru ✦ owner panel</title>
 <style>
 :root{--bg:#0b0a14;--fg:#efe9ff;--acc:#a78bfa;--dim:#8b93a7;--glass:rgba(124,58,237,.08);--stroke:rgba(167,139,250,.22)}
 *{box-sizing:border-box;margin:0}
@@ -111,6 +111,7 @@ section.on{display:block}
 <div class="toast" id="toast"></div>
 <script>
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+/* NOTE: esc() does not escape single quotes — only use it inside double-quoted attributes. */
 const $ = id => document.getElementById(id);
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
@@ -128,7 +129,7 @@ async function loadStats(){
     ['Servers', s.guildCount], ['Members', s.totalMembers],
     ['Commands', s.commandCount], ['Economy accounts', s.ecoAccounts], ['Verified users', s.verified]
   ].map(([k,v])=>'<div class="stat"><div class="v">'+esc(v)+'</div><div class="k">'+esc(k)+'</div></div>').join('');
-  const lines = d.audit.map(e=>'<div><b>'+esc(e.time.slice(11,19))+'</b> '+esc(e.actor)+' — '+esc(e.action)+(e.allowed===false?' <span class="no">BLOCKED</span>':'')+'</div>');
+  const lines = d.audit.map(e=>'<div><b>'+esc(e.time.slice(11,19))+'</b> '+esc(e.actor)+' ✦ '+esc(e.action)+(e.allowed===false?' <span class="no">BLOCKED</span>':'')+'</div>');
   $('auditmini').innerHTML = lines.slice(0,14).join('') || '<div>no activity yet</div>';
   $('auditfull').innerHTML = lines.join('') || '<div>no activity yet</div>';
 }
@@ -136,9 +137,9 @@ async function loadStats(){
 async function loadCommands(){
   const d = await api('/api/commands');
   $('cmdtable').querySelector('tbody').innerHTML = d.commands.map(c=>
-    '<tr><td><code>'+esc(c.usage)+'</code></td><td>'+esc(c.category)+'</td><td>'+esc(c.description)+'</td>'+
-    '<td>'+(c.perm?'<span class="badge">permission</span> ':'')+(c.modOnly?'<span class="badge">mod only</span>':'')+'</td>'+
-    '<td><label class="switch"><input type="checkbox" '+(c.enabled?'checked':'')+' data-cmd="'+esc(c.name)+'"><span class="slider"></span></label></td></tr>'
+    '<tr><td><code>'+esc(c.usage)+'</code></td><td>'+esc(c.category)+'</td><td>'+esc(c.description)+'</td><td>'+
+    (c.perm?'<span class="badge">permission</span> ':'')+(c.modOnly?'<span class="badge">mod only</span>':'')+'</td><td>'+
+    '<label class="switch"><input type="checkbox" '+(c.enabled?'checked':'')+' data-cmd="'+esc(c.name)+'"><span class="slider"></span></label></td></tr>'
   ).join('');
 }
 async function toggleCmd(name,on){
@@ -147,11 +148,11 @@ async function toggleCmd(name,on){
 }
 
 const ECO_FIELDS = [
-  ['dailyReward','Daily reward'], ['weeklyReward','Weekly reward'], ['monthlyReward','Monthly reward'],
-  ['workMin','Work pay min'], ['workMax','Work pay max'], ['workCooldownMin','Work cooldown (min)'],
-  ['crimeCooldownMs','Crime cooldown (ms)'], ['stealCooldownMs','Steal cooldown (ms)'],
-  ['fishCooldownMs','Fish cooldown (ms)'], ['huntCooldownMs','Hunt cooldown (ms)'],
-  ['digCooldownMs','Dig cooldown (ms)'], ['lotteryTicket','Lottery ticket price'], ['bankInterest','Bank interest (x)']
+  ['dailyReward','Daily reward'],['weeklyReward','Weekly reward'],['monthlyReward','Monthly reward'],
+  ['workMin','Work pay min'],['workMax','Work pay max'],['workCooldownMin','Work cooldown (min)'],
+  ['crimeCooldownMs','Crime cooldown (ms)'],['stealCooldownMs','Steal cooldown (ms)'],
+  ['fishCooldownMs','Fish cooldown (ms)'],['huntCooldownMs','Hunt cooldown (ms)'],
+  ['digCooldownMs','Dig cooldown (ms)'],['lotteryTicket','Lottery ticket price'],['bankInterest','Bank interest (x)']
 ];
 async function loadEco(){
   const s = await api('/api/economy');
@@ -189,7 +190,7 @@ async function loadServers(){
   const d = await api('/api/overview');
   $('guilddetail').style.display='none';
   $('serverlist').innerHTML = d.guilds.map(g=>
-    '<div class="card gcard" data-gid="'+esc(g.id)+'"><h2 class="gname">'+esc(g.name)+'</h2><div class="muted">'+g.memberCount+' members · '+esc(g.id)+' · click to view details</div></div>'
+    '<div class="card gcard" data-gid="'+esc(g.id)+'"><h2 class="gname">'+esc(g.name)+'</h2><div class="muted">'+esc(g.memberCount)+' members · '+esc(g.id)+' · click to view details</div></div>'
   ).join('') || '<p class="muted">No servers yet.</p>';
   $('serverlist').querySelectorAll('.gcard').forEach(c=>c.onclick=()=>openGuild(c.dataset.gid));
 }
@@ -206,17 +207,17 @@ async function openGuild(id){
   ).join('');
   const uncat = (d.uncategorized||[]).map(c=>'<div>· '+esc(c.name)+' <span class="muted">'+esc(c.type)+'</span></div>').join('');
   const roles = (d.roles||[]).map(r=>'<span class="badge">'+esc(r.name)+'</span>').join(' ');
-  const members = (d.members||[]).map(m=>'<tr><td>'+esc(m.tag)+'</td><td>'+esc(m.nickname||'')+'</td><td>'+m.roles+'</td></tr>').join('');
+  const members = (d.members||[]).map(m=>'<tr><td>'+esc(m.tag)+'</td><td>'+esc(m.nickname||'')+'</td><td>'+esc(m.roles)+'</td></tr>').join('');
   el.innerHTML =
-    '<button class="btn back" id="gback">← Back to servers</button>'+
+    '<button class="btn back" id="gback">⬅ Back to servers</button>'+
     '<h2 class="gname">'+esc(d.name)+'</h2>'+
-    '<div class="muted">'+d.memberCount+' members · owner &lt;'+esc(d.owner)+'&gt;</div>'+
+    '<div class="muted">'+esc(d.memberCount)+' members · owner &lt;'+esc(d.owner)+'&gt;</div>'+
     '<div class="subhead">Settings</div>'+
     '<div class="grid">'+
       '<div><label>Prefix</label><input value="'+esc(d.config.prefix)+'" readonly></div>'+
       '<div><label>Auto role</label><input value="'+esc(d.config.autoRole||'(none)')+'" readonly></div>'+
       '<div><label>Warn threshold</label><input value="'+esc(d.config.warnThreshold)+'" readonly></div>'+
-      '<div><label>Verification</label><input value="'+(d.verify&&d.verify.enabled?'enabled':'disabled')+'" readonly></div>'+
+      '<div><label>Verification</label><input value="'+((d.verify&&d.verify.enabled)?'enabled':'disabled')+'" readonly></div>'+
     '</div>'+
     '<div class="subhead">Roles</div><div>'+roles+'</div>'+
     '<div class="subhead">Channels</div>'+
@@ -224,7 +225,7 @@ async function openGuild(id){
     cats+
     '<div class="subhead">Members (first '+(d.members||[]).length+')</div>'+
     '<div style="overflow:auto;max-height:400px"><table><thead><tr><th>User</th><th>Nickname</th><th>Roles</th></tr></thead><tbody>'+members+'</tbody></table></div>';
-  $('gback').onclick=()=>{el.style.display='none';};
+  $('gback').onclick=()=>{el.style.display='none';loadServers();};
   el.scrollIntoView({behavior:'smooth'});
 }
 
