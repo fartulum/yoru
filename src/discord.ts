@@ -3,7 +3,7 @@ import { Agent } from "./agent.js";
 import { loadEnvFile } from "./llm.js";
 import { startWatchdog } from "./watchdog.js";
 import { logAudit } from "./audit.js";
-import { setPanelState } from "./panel.js";
+import { setPanelState, setPanelAgent } from "./panel.js";
 import { setOwnerPanelState, setOwnerPanelClient } from "./panel/api.js";
 import { playRobotBanner } from "./banner.js";
 import {
@@ -89,6 +89,9 @@ export async function startDiscord(ownerIds: string[]) {
     }
     return a;
   }
+
+  // Panel chat talks to a dedicated owner agent (full tool access).
+  setPanelAgent(getAgent("panel:owner", true, "panel"));
 
   /* ----- verification helpers (shared with the owner web panel) ----- */
   function verifyConfigFor(guildId: string): VerifyConfig {
