@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseCommand, findCommand, commandCatalogPrompt, commands, getAccount, loadState } from "./commands/index.js";
+import { timeLeft } from "./commands/shared.js";
 import { ROBOT_FRAMES } from "./banner.js";
 
 test("parseCommand extracts name and args", () => {
@@ -66,6 +67,18 @@ test("getAccount creates a starting account", () => {
   const a = getAccount(s, "test-user");
   assert.equal(a.balance, 100);
   assert.equal(a.lastDaily, 0);
+});
+
+test("timeLeft shows 0m right after a cooldown starts", () => {
+  assert.equal(timeLeft(30_000), "0m");
+});
+
+test("timeLeft floors partial minutes instead of rounding up", () => {
+  assert.equal(timeLeft(59_000), "0m");
+  assert.equal(timeLeft(60_000), "1m");
+  assert.equal(timeLeft(90_000), "1m");
+  assert.equal(timeLeft(3_600_000), "1h 0m");
+  assert.equal(timeLeft(3_600_000 + 90_000), "1h 1m");
 });
 
 test("banner has animated frames", () => {
