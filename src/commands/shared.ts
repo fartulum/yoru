@@ -104,7 +104,7 @@ export function clampInt(v: string | undefined, min: number, max: number, dflt: 
 
 export function timeLeft(ms: number): string {
   const h = Math.floor(ms / 3_600_000);
-  const m = Math.ceil((ms % 3_600_000) / 60_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 /**
