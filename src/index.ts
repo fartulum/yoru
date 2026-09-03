@@ -2,7 +2,7 @@ import { createInterface } from "node:readline";
 import { loadEnvFile } from "./llm.js";
 import { Agent } from "./agent.js";
 import { startWatchdog } from "./watchdog.js";
-import { startPanel, setPanelState } from "./panel.js";
+import { startPanel, setPanelState, setPanelAgent } from "./panel.js";
 import { startOwnerPanel } from "./panel/api.js";
 import { logAudit } from "./audit.js";
 import { playRobotBanner } from "./banner.js";
@@ -47,6 +47,7 @@ async function main() {
     rl.question(`${yellow("?")} ${q} `, (a) => { rl.close(); res(/^y(es)?$/i.test(a.trim())); });
   });
   const agent = new Agent({ owner: true, sender: "terminal", confirm, say: (t) => console.log(t) });
+  setPanelAgent(agent); // panel chat talks to the same agent (owner access)
   logAudit({ time: new Date().toISOString(), actor: "terminal", action: "session_start" });
   setPanelState({ name, status: "idle", activity: "Terminal session started" });
   console.log(
