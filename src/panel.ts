@@ -1,6 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { randomBytes } from "node:crypto";
+import { lookup as dnsLookup } from "node:dns/promises";
 import { readAudit } from "./audit.js";
 
 const DATA_DIR = "data";
@@ -55,6 +57,41 @@ function readBody(req: IncomingMessage): Promise<string> {
 }
 
 /**
+ * SSRF guard: block requests to private, loopback, and link-local IP ranges.
+ * Resolves DNS to catch hostnames that point to internal addresses.
+ */
+function isPrivateIP(ip: string): boolean {
+  // IPv4
+  if (/^127\./.test(ip)) return true;
+  if (/^10\./.test(ip)) return true;
+  if (/^192\.168\./.test(ip)) return true;
+  if (/^169\.254\./.test(ip)) return true;
+  if (/^172\.(1[6-9]|2[0-9]|3[01])\./.test(ip)) return true;
+  if (/^0\./.test(ip)) return true;
+  // IPv6
+  if (ip === "::1" || ip === "::") return true;
+  if (/^f[cd]/i.test(ip)) return true;  // unique local fc00::/7
+  if (/^fe80/i.test(ip)) return true;   // link-local
+  return false;
+}
+
+async function assertPublicURL(url: URL): Promise<void> {
+  const host = url.hostname;
+  if (host === "localhost" || host === "0.0.0.0" || host === "[::1]") {
+    throw new Error("URL must not point to localhost");
+  }
+  try {
+    const { address } = await dnsLookup(host);
+    if (isPrivateIP(address)) {
+      throw new Error(`URL resolves to private IP ${address}`);
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith("URL resolves")) throw e;
+    // DNS resolution failed — let fetch handle it
+  }
+}
+
+/**
  * E-Forward: fetch a document URL (e.g. https://reads.phrack.org/docs/)
  * and forward its text to the agent for processing. The optional API key
  * is taken from the request or the EFORWARD_API_KEY env var and is never
@@ -66,9 +103,15 @@ export async function eforwardFetch(url: string, apiKey?: string): Promise<strin
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error("only http(s) URLs are allowed");
   }
+  await assertPublicURL(parsed);
   const key = apiKey?.trim() || process.env.EFORWARD_API_KEY?.trim() || "";
   const headers: Record<string, string> = { "user-agent": "yoru-lite-panel/0.5" };
   if (key) headers["x-api-key"] = key;
+  // NOTE: redirect: "follow" means a public URL that 302-redirects to an
+  // internal IP (e.g. 169.254.169.254) bypasses the SSRF guard above,
+  // which only validates the initial URL. Acceptable while the panel is
+  // localhost-bound; switch to redirect: "manual" with per-hop validation
+  // if PANEL_PORT is ever exposed beyond localhost.
   const res = await fetch(parsed, { headers, redirect: "follow" });
   if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`);
   const text = await res.text();
@@ -93,8 +136,8 @@ const PAGE = `<!doctype html>
   :root { --bg:#0b0e14; --fg:#e6e9f0; --acc:#7c6cf0; --dim:#8b93a7; }
   * { box-sizing:border-box; margin:0; }
   body { background:var(--bg); color:var(--fg); font-family:'Segoe UI',system-ui,sans-serif;
-            height:100vh; display:flex; flex-direction:column; align-items:center; gap:14px;
-            padding:18px; overflow:hidden; }
+        height:100vh; display:flex; flex-direction:column; align-items:center; gap:14px;
+        padding:18px; overflow:hidden; }
   header { width:min(720px,94vw); display:flex; align-items:center; justify-content:space-between; }
   h1 { font-size:20px; font-weight:600; }
   /* hamburger menu (top right) */
@@ -105,7 +148,7 @@ const PAGE = `<!doctype html>
           box-shadow:0 10px 30px rgba(0,0,0,.5); }
   .menu.open { display:block; }
   .menu button { display:block; width:100%; text-align:left; background:none; border:none; color:var(--fg);
-          font:14px/1 'Segoe UI',system-ui; padding:10px 12px; border-radius:7px; cursor:pointer; }
+        font:14px/1 'Segoe UI',system-ui; padding:10px 12px; border-radius:7px; cursor:pointer; }
   .menu button:hover { background:#1c2233; color:var(--acc); }
   /* animated robot avatar */
   .avatar { width:170px; height:170px; position:relative; flex-shrink:0; }
@@ -114,7 +157,7 @@ const PAGE = `<!doctype html>
   .robot .arm-l, .robot .arm-r { transform-origin:top center; animation:wave 3s ease-in-out infinite; }
   .avatar.alert .robot { filter:drop-shadow(0 0 18px rgba(240,108,108,.8)); }
   .avatar .ring { position:absolute; inset:-12px; border-radius:50%;
-          border:2px dashed rgba(124,108,240,.35); animation:spin 14s linear infinite; }
+        border:2px dashed rgba(124,108,240,.35); animation:spin 14s linear infinite; }
   @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
   @keyframes spin { to { transform:rotate(360deg) } }
   @keyframes blink { 0%,92%,100%{transform:scaleY(1)} 95%{transform:scaleY(.1)} }
@@ -124,19 +167,19 @@ const PAGE = `<!doctype html>
   .activity { color:var(--dim); font-size:14px; max-width:520px; text-align:center; min-height:20px; }
   /* chat */
   .chat { width:min(720px,94vw); flex:1; min-height:120px; display:flex; flex-direction:column;
-          background:#10131c; border-radius:12px; overflow:hidden; }
+        background:#10131c; border-radius:12px; overflow:hidden; }
   .msgs { flex:1; overflow:auto; padding:14px 16px; display:flex; flex-direction:column; gap:10px; }
   .msg { max-width:80%; padding:8px 12px; border-radius:12px; font-size:14px; line-height:1.5;
-         white-space:pre-wrap; word-wrap:break-word; }
+        white-space:pre-wrap; word-wrap:break-word; }
   .msg.user { align-self:flex-end; background:var(--acc); color:#fff; border-bottom-right-radius:4px; }
   .msg.bot { align-self:flex-start; background:#1a1f30; border-bottom-left-radius:4px; }
   .msg.bot.pending { opacity:.6; font-style:italic; }
   .chatbar { display:flex; gap:8px; padding:10px; border-top:1px solid #1c2233; }
   .chatbar input { flex:1; background:#0b0e14; border:1px solid #232a3f; color:var(--fg);
-          border-radius:8px; padding:10px 12px; font-size:14px; outline:none; }
+        border-radius:8px; padding:10px 12px; font-size:14px; outline:none; }
   .chatbar input:focus { border-color:var(--acc); }
   .chatbar button { background:var(--acc); border:none; color:#fff; border-radius:8px;
-          padding:10px 18px; font-size:14px; cursor:pointer; }
+        padding:10px 18px; font-size:14px; cursor:pointer; }
   .chatbar button:disabled { opacity:.5; cursor:default; }
   /* E-Forward view */
   .eforward { width:min(720px,94vw); flex:1; display:none; flex-direction:column; gap:12px; }
@@ -144,13 +187,13 @@ const PAGE = `<!doctype html>
   .eforward h2 { font-size:16px; color:var(--acc); }
   .eforward p { color:var(--dim); font-size:13px; }
   .eforward input, .eforward textarea { background:#10131c; border:1px solid #232a3f; color:var(--fg);
-          border-radius:8px; padding:10px 12px; font-size:14px; outline:none; width:100%; }
+        border-radius:8px; padding:10px 12px; font-size:14px; outline:none; width:100%; }
   .eforward textarea { min-height:140px; resize:vertical; font:13px/1.5 ui-monospace,monospace; }
   .eforward .row { display:flex; gap:8px; }
   .eforward button { background:var(--acc); border:none; color:#fff; border-radius:8px;
-          padding:10px 18px; font-size:14px; cursor:pointer; align-self:flex-start; }
+        padding:10px 18px; font-size:14px; cursor:pointer; align-self:flex-start; }
   .eforward .result { flex:1; overflow:auto; background:#10131c; border-radius:10px; padding:12px 14px;
-          font:12px/1.7 ui-monospace,monospace; color:var(--dim); white-space:pre-wrap; }
+        font:12px/1.7 ui-monospace,monospace; color:var(--dim); white-space:pre-wrap; }
   .log { width:min(720px,94vw); max-height:20vh; overflow:auto; background:#10131c; border-radius:10px;
         padding:10px 16px; font:12px/1.7 ui-monospace,monospace; color:var(--dim); }
   .log b { color:var(--fg); font-weight:600; }
@@ -208,8 +251,12 @@ const PAGE = `<!doctype html>
 
 <div class="log" id="log"></div>
 <script>
+  // esc() escapes & < > " but NOT single quotes. This is safe for textContent
+  // usage and for the innerHTML audit log below where values are placed
+  // between tags (not in attribute values).
   const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const $ = id => document.getElementById(id);
+  const PANEL_TOKEN = '__PANEL_TOKEN__';
 
   /* --- hamburger menu --- */
   $('burger').onclick = e => { e.stopPropagation(); $('menu').classList.toggle('open'); };
@@ -235,7 +282,7 @@ const PAGE = `<!doctype html>
     const pending = addMsg('…', 'bot pending');
     $('sendbtn').disabled = true;
     try {
-      const r = await fetch('/chat', { method:'POST', headers:{'content-type':'application/json'},
+      const r = await fetch('/chat', { method:'POST', headers:{'content-type':'application/json','x-panel-token':PANEL_TOKEN},
         body: JSON.stringify({ message: text }) });
       const j = await r.json();
       pending.remove();
@@ -255,7 +302,7 @@ const PAGE = `<!doctype html>
     if (!url) { $('efresult').textContent = 'Enter a document URL first.'; return; }
     $('efresult').textContent = 'Fetching ' + url + ' …';
     try {
-      const r = await fetch('/eforward', { method:'POST', headers:{'content-type':'application/json'},
+      const r = await fetch('/eforward', { method:'POST', headers:{'content-type':'application/json','x-panel-token':PANEL_TOKEN},
         body: JSON.stringify({ url, apiKey: $('efkey').value.trim() || undefined }) });
       const j = await r.json();
       $('efresult').textContent = r.ok ? j.reply : 'ERROR: ' + (j.error || r.status);
@@ -273,13 +320,19 @@ const PAGE = `<!doctype html>
       $('activity').textContent = s.activity;
       const a = await (await fetch('/audit')).json();
       $('log').innerHTML = a.slice(-14).reverse().map(e =>
-        '<div><b>'+esc(e.time.slice(11,19))+'</b> '+esc(e.actor)+' — '+esc(e.action)+
+        '<div><b>' + esc(e.time.slice(11,19)) + '</b> ' + esc(e.actor) + ' — ' + esc(e.action) +
         (e.allowed===false?' <span class="no">BLOCKED</span>':'')+'</div>').join('') || '<div>no activity yet</div>';
     } catch {}
   }
   tick(); setInterval(tick, 2000);
 </script>
 </body></html>`;
+
+/** Random token generated at startup, required on /chat and /eforward. */
+const PANEL_TOKEN = randomBytes(16).toString("hex");
+
+/** Concurrency guard: prevent overlapping agent.handle() calls. */
+let agentBusy = false;
 
 /**
  * Start the visual character panel on http://localhost:PORT (default 4174,
@@ -299,6 +352,17 @@ export function startPanel(port = Number(process.env.PANEL_PORT ?? 4174)): void 
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(readAudit(50)));
     } else if (req.url === "/chat" && req.method === "POST") {
+      if (req.headers["x-panel-token"] !== PANEL_TOKEN) {
+        res.writeHead(403, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "unauthorized" }));
+        return;
+      }
+      if (agentBusy) {
+        res.writeHead(409, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "agent busy, wait for the current response" }));
+        return;
+      }
+      agentBusy = true;
       try {
         const body = JSON.parse(await readBody(req)) as { message?: string };
         const message = body.message?.trim();
@@ -311,8 +375,21 @@ export function startPanel(port = Number(process.env.PANEL_PORT ?? 4174)): void 
       } catch (e) {
         res.writeHead(400, { "content-type": "application/json" });
         res.end(JSON.stringify({ error: (e as Error).message }));
+      } finally {
+        agentBusy = false;
       }
     } else if (req.url === "/eforward" && req.method === "POST") {
+      if (req.headers["x-panel-token"] !== PANEL_TOKEN) {
+        res.writeHead(403, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "unauthorized" }));
+        return;
+      }
+      if (agentBusy) {
+        res.writeHead(409, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "agent busy, wait for the current response" }));
+        return;
+      }
+      agentBusy = true;
       try {
         const body = JSON.parse(await readBody(req)) as { url?: string; apiKey?: string };
         if (!body.url) throw new Error("missing url");
@@ -328,10 +405,12 @@ export function startPanel(port = Number(process.env.PANEL_PORT ?? 4174)): void 
       } catch (e) {
         res.writeHead(400, { "content-type": "application/json" });
         res.end(JSON.stringify({ error: (e as Error).message }));
+      } finally {
+        agentBusy = false;
       }
     } else {
-      res.writeHead(200, { "content-type": "text/html" });
-      res.end(PAGE);
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(PAGE.replace("__PANEL_TOKEN__", PANEL_TOKEN));
     }
   });
 
@@ -352,5 +431,6 @@ export function startPanel(port = Number(process.env.PANEL_PORT ?? 4174)): void 
   server.listen(port, () => {
     const actual = (server.address() as { port: number }).port;
     console.log(`Visual agent panel: http://localhost:${actual}  (set PANEL_PORT to change)`);
+    console.log(`Panel auth token: ${PANEL_TOKEN}`);
   });
 }
