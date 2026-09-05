@@ -107,6 +107,11 @@ export async function eforwardFetch(url: string, apiKey?: string): Promise<strin
   const key = apiKey?.trim() || process.env.EFORWARD_API_KEY?.trim() || "";
   const headers: Record<string, string> = { "user-agent": "yoru-lite-panel/0.5" };
   if (key) headers["x-api-key"] = key;
+  // NOTE: redirect: "follow" means a public URL that 302-redirects to an
+  // internal IP (e.g. 169.254.169.254) bypasses the SSRF guard above,
+  // which only validates the initial URL. Acceptable while the panel is
+  // localhost-bound; switch to redirect: "manual" with per-hop validation
+  // if PANEL_PORT is ever exposed beyond localhost.
   const res = await fetch(parsed, { headers, redirect: "follow" });
   if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`);
   const text = await res.text();
@@ -338,7 +343,7 @@ let agentBusy = false;
  * Endpoints: GET /state, GET /audit, POST /chat {message},
  * POST /eforward {url, apiKey?}.
  */
-export function startPanel(port = Number(process.env.PANEL_PORT) ?? 4174): void {
+export function startPanel(port = Number(process.env.PANEL_PORT ?? 4174)): void {
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     if (req.url === "/state") {
       res.writeHead(200, { "content-type": "application/json" });
